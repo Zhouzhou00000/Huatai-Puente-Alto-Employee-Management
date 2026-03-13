@@ -1,0 +1,10 @@
+{
+  "name": "huatai-employee-management",
+  "private": true,
+  "scripts": {
+    "init-db": "cd backend && npm run init-db",
+    "start-backend": "cd backend && npm start",
+    "start-frontend": "cd frontend && npm start",
+    "start": "echo 'Run: npm run start-backend (terminal 1) && npm run start-frontend (terminal 2)'"
+  }
+}
