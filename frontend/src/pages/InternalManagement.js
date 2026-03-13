@@ -115,6 +115,7 @@ function InternalManagement() {
   });
 
   const openAdd = () => { setForm(emptyForm); setShowAddModal(true); };
+  const openAddInternal = () => { setForm({ ...emptyForm, nationality: 'China', position: '管理' }); setShowAddModal(true); };
   const handleAdd = async (e) => {
     e.preventDefault();
     try {
@@ -380,7 +381,10 @@ function InternalManagement() {
           )}
 
           {/* Chinese employees table with role/permission */}
-          <div className="section-title">{t('chineseEmployees')} ({chineseEmployees.length})</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div className="section-title" style={{ marginBottom: 0 }}>{t('chineseEmployees')} ({chineseEmployees.length})</div>
+            <button className="btn btn-primary btn-small" onClick={openAddInternal}>+ {t('add')}</button>
+          </div>
           <div className="table-container">
             <table>
               <thead>
@@ -416,8 +420,9 @@ function InternalManagement() {
                       </select>
                     </td>
                     <td>
-                      <div className="btn-group">
+                      <div className="btn-group" style={{ flexWrap: 'wrap' }}>
                         <button className="btn btn-primary btn-small" onClick={() => openEdit(emp)}>{t('edit')}</button>
+                        <button className="btn btn-warning btn-small" onClick={() => handleResetPassword(emp)}>{t('resetPassword')}</button>
                         {emp.contract_status !== '已离职' && (
                           <button className="btn btn-danger btn-small" onClick={() => handleDepart(emp)}>{t('depart')}</button>
                         )}

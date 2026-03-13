@@ -5,6 +5,7 @@ const USERS = [
   { username: 'admin', password: 'huatai2026', name: '管理员', role: 'admin' },
   { username: 'xingting', password: '123456', name: '李兴婷', role: 'admin' },
   { username: 'zhengmiao', password: '123456', name: '郑淼', role: 'admin' },
+  { username: 'juancarlos', password: '1234', name: 'Juan Carlos', role: 'staff' },
 ];
 
 export default function Login({ onLogin }) {
