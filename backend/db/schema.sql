@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS employees (
   nationality VARCHAR(20) DEFAULT 'Chile',   -- 国籍: Chile, China
   daily_wage INTEGER DEFAULT 0,              -- 日薪(CLP), 仅日结工人
   area VARCHAR(30),                          -- 区域: 游乐园, 零售, 化妆品, 保安, 柜台
+  role VARCHAR(20) DEFAULT '普通员工',        -- 权限: 管理员, 主管, 普通员工
+  password VARCHAR(100) DEFAULT '123456',    -- 登录密码
   notes TEXT,                                -- 备注
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
@@ -41,8 +43,24 @@ CREATE TABLE IF NOT EXISTS announcements (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- 员工文件表 (合同PDF, 照片, 工资单)
+CREATE TABLE IF NOT EXISTS employee_files (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  file_type VARCHAR(20) NOT NULL,        -- contract, photo, payslip
+  original_name VARCHAR(500) NOT NULL,   -- 原始文件名
+  stored_name VARCHAR(500) NOT NULL,     -- 存储文件名
+  mime_type VARCHAR(100),
+  file_size INTEGER,
+  payslip_year INTEGER,                  -- 工资单年份 (仅payslip类型)
+  payslip_month INTEGER,                 -- 工资单月份 (仅payslip类型)
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(work_date);
 CREATE INDEX IF NOT EXISTS idx_schedules_employee ON schedules(employee_id);
 CREATE INDEX IF NOT EXISTS idx_employees_status ON employees(contract_status);
 CREATE INDEX IF NOT EXISTS idx_announcements_pinned ON announcements(pinned, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_employee_files_employee ON employee_files(employee_id);
+CREATE INDEX IF NOT EXISTS idx_employee_files_type ON employee_files(employee_id, file_type);

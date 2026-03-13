@@ -3,12 +3,28 @@ import React, { createContext, useContext, useState } from 'react';
 const translations = {
   zh: {
     // Nav
+    navHome: '首页',
     navEmployees: '员工信息',
     navSchedule: '排班日历',
     navAnnouncements: '公告通知',
     navInternal: '内部管理',
     brandSub: 'Gestión Interna',
     logout: '退出',
+
+    // Home
+    greetingMorning: '早上好 👋',
+    greetingAfternoon: '下午好 👋',
+    greetingEvening: '晚上好 👋',
+    locale: 'zh-CN',
+    homeTotal: '总员工',
+    homeRecentAnnouncements: '最新公告',
+    homeViewAll: '查看全部',
+    homeQuickActions: '快捷操作',
+    reportByStatus: '员工状态分布',
+    reportByArea: '区域分布',
+    reportByGroup: '排班组分布',
+    reportNoGroup: '未分组',
+    reportPeople: '人',
 
     // Login
     loginTitle: '华泰商城 — 员工管理系统',
@@ -86,23 +102,30 @@ const translations = {
     formNotes: '备注',
     formNone: '无',
 
+    // Edit page
+    backToList: '返回列表',
+    basicInfo: '基本信息',
+    contractInfo: '合同信息',
+    workInfo: '工作信息',
+
     // Schedule
     scheduleTitle: '排班日历',
     today: '今天',
     autoAssign: '自动排班',
     assigning: '排班中...',
     printSchedule: '打印排班表',
-    autoAssignConfirm: (y, m) => `确认为 ${y}年${m}月 自动排班？\n\n规则：\n• 每人每周休息1天（周一到周日轮流）\n• 同组员工错开休息日，保证每天每组都有人\n• 默认全天班(9)\n• 已有排班会被覆盖`,
+    autoAssignConfirm: (y, m) => `确认为 ${y}年${m}月 自动排班？\n\n规则：\n• 周一至周六: 10:00-20:00\n• 周日: 11:00-18:00\n• 每人每周休息1天，按组轮换\n• 午休1小时，A/B/C组分时段\n• 已有排班会被覆盖`,
     autoAssignFail: '自动排班失败: ',
     clickDayHint: '点击日历中的某一天查看详情',
     lunchRotation: '本周午休轮换:',
-    lunchTitle: '午休安排',
+    lunchTitle: '午休安排 (1小时)',
+    workHours: '上班时间',
     group: '组',
     people: '人',
     rest: '休息',
     quickSchedule: '快速排班',
-    quickScheduleHint: '点击切换: 9(全天) → 7(半天) → R(休息)',
-    fullDay: '全天',
+    quickScheduleHint: '点击切换: 9(上班) → R(休息)',
+    fullDay: '上班',
     halfDay: '半天',
     unscheduled: '未排',
     dayNames: ['一', '二', '三', '四', '五', '六', '日'],
@@ -139,7 +162,8 @@ const translations = {
     confirmDeleteAnnouncement: '确认删除此公告？',
 
     // Internal management
-    internalTitle: '操作面板 — 内部管理',
+    internalTitle: '内部管理',
+    employeeMgmt: '员工管理',
     createEmployee: '创建员工',
     createEmployeeSub: '新增员工账号',
     trialToFormal: '试用期转正',
@@ -178,6 +202,43 @@ const translations = {
     colNationality: '国籍',
     colContractExpiry: '合同到期',
 
+    // File uploads
+    fileDocuments: '文件资料',
+    fileContract: '合同 PDF',
+    fileFiniquito: 'Finiquito',
+    filePhoto: '员工照片',
+    filePayslip: '工资单',
+    fileUpload: '上传',
+    fileUploading: '上传中...',
+    fileDelete: '删除',
+    fileConfirmDelete: '确定删除此文件？',
+    fileView: '查看',
+    fileDownload: '下载',
+    fileNoFiles: '暂无文件',
+    fileSelectType: '选择文件类型',
+    filePayslipYear: '年份',
+    filePayslipMonth: '月份',
+    fileUploadSuccess: '上传成功',
+    fileUploadFail: '上传失败: ',
+    fileDeleteFail: '删除失败: ',
+    fileSizeLimit: '文件大小不能超过20MB',
+    fileTypeNotSupported: '不支持的文件类型，请上传PDF或图片',
+
+    // Permissions / Roles
+    colRole: '权限',
+    roleAdmin: '管理员',
+    roleSupervisor: '主管',
+    roleStaff: '普通员工',
+    chineseEmployees: '中国员工列表',
+    permissionUpdated: '权限已更新',
+    permissionFail: '权限更新失败: ',
+
+    // Password
+    resetPassword: '重置密码',
+    confirmResetPassword: (name) => `确定将 ${name} 的密码重置为 123456？`,
+    resetPasswordSuccess: '密码已重置为 123456',
+    resetPasswordFail: '重置密码失败: ',
+
     // Language
     lang: '中文',
     switchLang: 'ES',
@@ -185,12 +246,28 @@ const translations = {
 
   es: {
     // Nav
+    navHome: 'Inicio',
     navEmployees: 'Empleados',
     navSchedule: 'Horarios',
     navAnnouncements: 'Avisos',
     navInternal: 'Gestión Interna',
     brandSub: 'Gestión Interna',
     logout: 'Salir',
+
+    // Home
+    greetingMorning: 'Buenos días 👋',
+    greetingAfternoon: 'Buenas tardes 👋',
+    greetingEvening: 'Buenas noches 👋',
+    locale: 'es-CL',
+    homeTotal: 'Total empleados',
+    homeRecentAnnouncements: 'Avisos recientes',
+    homeViewAll: 'Ver todos',
+    homeQuickActions: 'Acceso rápido',
+    reportByStatus: 'Distribución por estado',
+    reportByArea: 'Distribución por área',
+    reportByGroup: 'Distribución por grupo',
+    reportNoGroup: 'Sin grupo',
+    reportPeople: 'pers.',
 
     // Login
     loginTitle: 'Centro Comercial Huatai — Sistema de Gestión',
@@ -268,14 +345,21 @@ const translations = {
     formNotes: 'Notas',
     formNone: 'Ninguno',
 
+    // Edit page
+    backToList: 'Volver a la lista',
+    basicInfo: 'Información básica',
+    contractInfo: 'Información de contrato',
+    workInfo: 'Información laboral',
+
     // Schedule
     scheduleTitle: 'Calendario de turnos',
     today: 'Hoy',
     autoAssign: 'Auto-asignar',
     assigning: 'Asignando...',
     printSchedule: 'Imprimir turnos',
-    autoAssignConfirm: (y, m) => `¿Confirmar auto-asignación para ${m}/${y}?\n\nReglas:\n• 1 día libre por semana por empleado\n• Días libres escalonados por grupo\n• Turno completo por defecto (9)\n• Se sobrescribirán los turnos existentes`,
+    autoAssignConfirm: (y, m) => `¿Confirmar auto-asignación para ${m}/${y}?\n\nReglas:\n• Lun–Sáb: 10:00–20:00\n• Dom: 11:00–18:00\n• 1 día libre por semana, rotación por grupo\n• Almuerzo 1 hora (A/B/C en horarios distintos)\n• Se sobrescribirán los turnos existentes`,
     autoAssignFail: 'Error en auto-asignación: ',
+    workHours: 'Horario',
     clickDayHint: 'Haga clic en un día para ver los detalles',
     lunchRotation: 'Rotación almuerzo esta semana:',
     lunchTitle: 'Horario almuerzo',
@@ -321,7 +405,8 @@ const translations = {
     confirmDeleteAnnouncement: '¿Eliminar este aviso?',
 
     // Internal management
-    internalTitle: 'Panel de operaciones — Gestión Interna',
+    internalTitle: 'Gestión Interna',
+    employeeMgmt: 'Gestión de Empleados',
     createEmployee: 'Crear empleado',
     createEmployeeSub: 'Nueva cuenta de empleado',
     trialToFormal: 'Formalizar',
@@ -359,6 +444,43 @@ const translations = {
     colStatus2: 'Estado',
     colNationality: 'Nacionalidad',
     colContractExpiry: 'Vencimiento',
+
+    // File uploads
+    fileDocuments: 'Documentos',
+    fileContract: 'Contrato PDF',
+    fileFiniquito: 'Finiquito',
+    filePhoto: 'Foto empleado',
+    filePayslip: 'Liquidación',
+    fileUpload: 'Subir',
+    fileUploading: 'Subiendo...',
+    fileDelete: 'Eliminar',
+    fileConfirmDelete: '¿Eliminar este archivo?',
+    fileView: 'Ver',
+    fileDownload: 'Descargar',
+    fileNoFiles: 'Sin archivos',
+    fileSelectType: 'Seleccionar tipo',
+    filePayslipYear: 'Año',
+    filePayslipMonth: 'Mes',
+    fileUploadSuccess: 'Subido exitosamente',
+    fileUploadFail: 'Error al subir: ',
+    fileDeleteFail: 'Error al eliminar: ',
+    fileSizeLimit: 'El archivo no puede exceder 20MB',
+    fileTypeNotSupported: 'Tipo no soportado, suba PDF o imagen',
+
+    // Permissions / Roles
+    colRole: 'Permiso',
+    roleAdmin: 'Administrador',
+    roleSupervisor: 'Supervisor',
+    roleStaff: 'Empleado',
+    chineseEmployees: 'Empleados Chinos',
+    permissionUpdated: 'Permiso actualizado',
+    permissionFail: 'Error al actualizar permiso: ',
+
+    // Password
+    resetPassword: 'Restablecer contraseña',
+    confirmResetPassword: (name) => `¿Restablecer la contraseña de ${name} a 123456?`,
+    resetPasswordSuccess: 'Contraseña restablecida a 123456',
+    resetPasswordFail: 'Error al restablecer: ',
 
     // Language
     lang: 'ES',

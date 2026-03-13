@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getEmployees, getSchedules, updateSchedule, batchUpdateSchedules } from '../api';
 import { useLang } from '../i18n';
+import ConfirmDialog from '../components/ConfirmDialog';
+import useConfirm from '../hooks/useConfirm';
 
-const SHIFT_CYCLE = ['9', '7', 'R'];
+const SHIFT_CYCLE = ['9', 'R'];
 
+// Lunch slots by group — rotate weekly
 const LUNCH_SLOTS = [
-  { label: '12:30 - 13:30', short: '12:30' },
-  { label: '13:30 - 14:30', short: '13:30' },
-  { label: '14:30 - 15:30', short: '14:30' },
+  { label: '13:00 - 14:00', short: '13:00' },
+  { label: '14:00 - 15:00', short: '14:00' },
+  { label: '15:00 - 16:00', short: '15:00' },
 ];
 
 function getLunchSlot(group, weekIndex) {
@@ -16,6 +19,13 @@ function getLunchSlot(group, weekIndex) {
   if (offset === undefined) return null;
   const slotIndex = (offset + weekIndex) % 3;
   return LUNCH_SLOTS[slotIndex];
+}
+
+// Work hours based on day of week
+function getWorkHours(dow) {
+  // dow: 0=Sun, 1=Mon ... 6=Sat
+  if (dow === 0) return { start: '11:00', end: '18:00', label: '11:00–18:00' };
+  return { start: '10:00', end: '20:00', label: '10:00–20:00' };
 }
 
 function getISOWeek(year, month, day) {
@@ -66,6 +76,7 @@ export default function Schedule() {
   const [selectedDay, setSelectedDay] = useState(null);
   const [autoAssigning, setAutoAssigning] = useState(false);
   const { t, tArea } = useLang();
+  const { confirmMessage, confirm, handleConfirm, handleCancel } = useConfirm();
 
   const daysInMonth = getDaysInMonth(year, month);
 
@@ -107,31 +118,59 @@ export default function Schedule() {
   };
 
   const handleAutoAssign = async () => {
-    if (!window.confirm(t('autoAssignConfirm')(year, month))) return;
+    if (!await confirm(t('autoAssignConfirm')(year, month))) return;
 
     setAutoAssigning(true);
     try {
       const schedules = [];
-      const areaGroups = {};
+
+      // Group employees by their shift_group (A, B, C) and area
+      const groupedEmps = { A: [], B: [], C: [], none: [] };
       employees.forEach(emp => {
-        const area = emp.area || '未分配';
-        if (!areaGroups[area]) areaGroups[area] = [];
-        areaGroups[area].push(emp);
+        const g = emp.shift_group;
+        if (g && groupedEmps[g]) {
+          groupedEmps[g].push(emp);
+        } else {
+          groupedEmps.none.push(emp);
+        }
       });
 
       for (let day = 1; day <= daysInMonth; day++) {
         const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const dow = getDayOfWeek(year, month, day);
 
-        Object.values(areaGroups).forEach(members => {
-          members.forEach((emp, idx) => {
-            const restDow = idx % 7;
-            const isRest = dow === restDow;
+        // Each group gets a different rest day pattern
+        // Group A rests on: week rotation (Mon, Tue, Wed...)
+        // Group B rests offset by 2 days
+        // Group C rests offset by 4 days
+        // This ensures each day has employees from all groups working
+        const weekOfMonth = Math.floor((day - 1) / 7);
+
+        ['A', 'B', 'C'].forEach((group, groupIdx) => {
+          groupedEmps[group].forEach((emp, empIdx) => {
+            // Each employee in the group gets a different rest day
+            // Stagger within group so not everyone rests on same day
+            const restDay = (empIdx + groupIdx * 2 + weekOfMonth) % 7;
+            // Map restDay to actual dow (1=Mon...0=Sun)
+            const mappedDow = restDay === 6 ? 0 : restDay + 1;
+            const isRest = dow === mappedDow;
+
             schedules.push({
               employee_id: emp.id,
               work_date: dateStr,
               shift_value: isRest ? 'R' : '9'
             });
+          });
+        });
+
+        // Employees without group
+        groupedEmps.none.forEach((emp, idx) => {
+          const restDow = idx % 7;
+          const isRest = dow === restDow;
+          schedules.push({
+            employee_id: emp.id,
+            work_date: dateStr,
+            shift_value: isRest ? 'R' : '9'
           });
         });
       }
@@ -161,17 +200,24 @@ export default function Schedule() {
       areaGroups[area].push(emp);
     });
 
-    const shiftLabel = (v) => v === '9' ? '9' : v === '7' ? '7' : v === 'R' ? 'R' : '';
-    const dayNamesShort = t('dayNames');
+    const shiftLabel = (v) => v === '9' ? '9' : v === 'R' ? 'R' : '';
+    const esDayNames = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do'];
+    const esMonthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const AREA_ES = { '游乐园': 'Parque', '零售': 'Retail', '化妆品': 'Cosméticos', '保安': 'Seguridad', '柜台': 'Mostrador', '未分配': 'Sin asignar' };
 
     let html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-      <title>${t('printTitle')} ${year}-${month} - Centro Comercial Huatai</title>
+      <title>Horario de Turnos ${esMonthNames[month-1]} ${year} - Centro Comercial Huatai</title>
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: Arial, sans-serif; padding: 15px; font-size: 11px; }
-        h1 { font-size: 18px; text-align: center; margin-bottom: 4px; }
+        h1 { font-size: 20px; text-align: center; margin-bottom: 2px; color: #1a1a2e; }
+        h2.subtitle { font-size: 14px; text-align: center; color: #555; font-weight: 400; margin-bottom: 8px; }
         h3 { font-size: 13px; margin: 12px 0 4px; padding: 3px 8px; border-radius: 3px; }
-        .meta { text-align: center; font-size: 10px; color: #666; margin-bottom: 10px; }
+        .meta { text-align: center; font-size: 10px; color: #666; margin-bottom: 6px; }
+        .time-info { text-align: center; margin: 6px 0 10px; padding: 10px; background: #f8f9fa; border-radius: 6px; font-size: 14px; }
+        .time-info strong { color: #1a1a2e; }
+        .time-row { display: inline-flex; align-items: center; gap: 6px; margin: 0 10px; }
+        .time-badge { padding: 2px 10px; border-radius: 4px; font-weight: 700; font-size: 11px; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
         th, td { border: 1px solid #ccc; padding: 3px 4px; text-align: center; font-size: 10px; }
         th { background: #1a1a2e; color: white; font-weight: 600; }
@@ -179,11 +225,8 @@ export default function Schedule() {
         .group-cell { font-weight: 600; }
         .weekend-col { background: #fff5f5; }
         .shift-9 { background: #d4edda; font-weight: 700; }
-        .shift-7 { background: #fff3cd; font-weight: 700; }
         .shift-R { background: #f8d7da; color: #999; }
         .summary td { font-weight: 600; background: #f0f2f5; }
-        .legend { display: flex; gap: 12px; justify-content: center; margin: 8px 0; font-size: 10px; }
-        .legend span { padding: 2px 8px; border-radius: 3px; }
         @media print {
           body { padding: 5px; }
           @page { size: landscape; margin: 8mm; }
@@ -191,13 +234,22 @@ export default function Schedule() {
       </style>
     </head><body>`;
 
-    html += `<h1>Centro Comercial Huatai — ${t('printTitle')}</h1>`;
-    html += `<div class="meta">${year} - ${month} | ${daysInMonth} ${t('printDays')} | ${employees.length} ${t('people')}</div>`;
-    html += `<div class="legend">
-      <span style="background:#d4edda">${t('printFullDay')}</span>
-      <span style="background:#fff3cd">${t('printHalfDay')}</span>
-      <span style="background:#f8d7da">${t('printRestDay')}</span>
-    </div>`;
+    html += `<h1>Centro Comercial Huatai</h1>`;
+    html += `<h2 class="subtitle">Horario de Turnos — ${esMonthNames[month-1]} ${year}</h2>`;
+    html += `<div class="meta">${esMonthNames[month-1]} ${year} | ${daysInMonth} días | ${employees.length} empleados</div>`;
+
+    // Work time info section
+    html += `<div class="time-info">`;
+    html += `<strong>Horarios de trabajo:</strong>&nbsp;&nbsp;`;
+    html += `<span class="time-row"><span class="time-badge" style="background:#d4edda;color:#155724">9</span> Lun–Sáb: 10:00 – 20:00 &nbsp;|&nbsp; Dom: 11:00 – 18:00</span>`;
+    html += `<span class="time-row"><span class="time-badge" style="background:#f8d7da;color:#721c24">R</span> Descanso</span>`;
+    html += `</div>`;
+
+    // Lunch rotation info
+    html += `<div class="time-info" style="font-size:10px">`;
+    html += `<strong>Almuerzo (1 hora, rotación semanal):</strong>&nbsp;&nbsp;`;
+    html += `Grupo A: 13:00–14:00 &nbsp;|&nbsp; Grupo B: 14:00–15:00 &nbsp;|&nbsp; Grupo C: 15:00–16:00`;
+    html += `</div>`;
 
     const areaOrder = [...AREAS, '未分配'];
     areaOrder.forEach(area => {
@@ -206,29 +258,31 @@ export default function Schedule() {
 
       const ac = AREA_COLORS[area];
       const bgStyle = ac ? `background:${ac.bg}; color:${ac.text}` : 'background:#eee';
-      html += `<h3 style="${bgStyle}">${tArea(area)} (${members.length} ${t('people')})</h3>`;
+      const areaName = AREA_ES[area] || area;
+      html += `<h3 style="${bgStyle}">${areaName} (${members.length} empleados)</h3>`;
       html += `<table><thead><tr>`;
-      html += `<th class="name-cell">${t('printName')}</th><th>${t('group')}</th>`;
+      html += `<th class="name-cell">Nombre</th><th>Grupo</th><th style="min-width:80px">Horario</th>`;
       days.forEach(d => {
         const dow = getDayOfWeek(year, month, d);
         const isWe = dow === 0 || dow === 6;
-        const dayName = dayNamesShort[(dow + 6) % 7];
+        const dayName = esDayNames[(dow + 6) % 7];
         html += `<th class="${isWe ? 'weekend-col' : ''}" style="min-width:22px">${d}<br><span style="font-size:8px;font-weight:normal">${dayName}</span></th>`;
       });
-      html += `<th>${t('printWork')}</th><th>${t('printRest')}</th>`;
+      html += `<th>Trab.</th><th>Desc.</th>`;
       html += `</tr></thead><tbody>`;
 
       members.forEach(emp => {
         html += `<tr>`;
         html += `<td class="name-cell">${getShortName(emp.name)}</td>`;
         html += `<td class="group-cell">${emp.shift_group || '-'}</td>`;
+        html += `<td style="font-size:9px;white-space:nowrap;color:#555">L-S 10–20<br>D 11–18</td>`;
         let workDays = 0, restDays = 0;
         days.forEach(d => {
           const v = getShiftValue(emp.id, d);
           const dow = getDayOfWeek(year, month, d);
           const isWe = dow === 0 || dow === 6;
           const cls = v ? `shift-${v}` : '';
-          if (v === '9' || v === '7') workDays++;
+          if (v === '9') workDays++;
           if (v === 'R') restDays++;
           html += `<td class="${cls} ${isWe && !v ? 'weekend-col' : ''}">${shiftLabel(v)}</td>`;
         });
@@ -237,11 +291,11 @@ export default function Schedule() {
         html += `</tr>`;
       });
 
-      html += `<tr class="summary"><td colspan="2">${t('printDailyWorking')}</td>`;
+      html += `<tr class="summary"><td colspan="3">Trabajando por día</td>`;
       days.forEach(d => {
         const count = members.filter(emp => {
           const v = getShiftValue(emp.id, d);
-          return v === '9' || v === '7';
+          return v === '9';
         }).length;
         html += `<td>${count || ''}</td>`;
       });
@@ -249,29 +303,7 @@ export default function Schedule() {
       html += `</tbody></table>`;
     });
 
-    html += `<h3 style="background:#1a1a2e; color:white">${t('printSummary')}</h3>`;
-    html += `<table><thead><tr><th></th>`;
-    days.forEach(d => {
-      const dow = getDayOfWeek(year, month, d);
-      const dayName = dayNamesShort[(dow + 6) % 7];
-      html += `<th>${d}<br><span style="font-size:8px;font-weight:normal">${dayName}</span></th>`;
-    });
-    html += `</tr></thead><tbody><tr><td style="font-weight:600">${t('printWorking')}</td>`;
-    days.forEach(d => {
-      const count = employees.filter(emp => {
-        const v = getShiftValue(emp.id, d);
-        return v === '9' || v === '7';
-      }).length;
-      html += `<td style="font-weight:700">${count}</td>`;
-    });
-    html += `</tr><tr><td style="font-weight:600">${t('printResting')}</td>`;
-    days.forEach(d => {
-      const count = employees.filter(emp => getShiftValue(emp.id, d) === 'R').length;
-      html += `<td style="color:#999">${count}</td>`;
-    });
-    html += `</tr></tbody></table>`;
-
-    html += `<div class="meta" style="margin-top:12px">${t('printTime')}: ${new Date().toLocaleString()}</div>`;
+    html += `<div class="meta" style="margin-top:12px">Impreso: ${new Date().toLocaleString('es-CL')}</div>`;
     html += `</body></html>`;
 
     const printWin = window.open('', '_blank');
@@ -292,16 +324,11 @@ export default function Schedule() {
     calendarDays.push(dayNum >= 1 && dayNum <= daysInMonth ? dayNum : null);
   }
 
-  const weeks = [];
-  for (let i = 0; i < calendarDays.length; i += 7) {
-    weeks.push(calendarDays.slice(i, i + 7));
-  }
-
   const getWorkingEmployees = (day) => {
     if (!day) return [];
     return employees.filter(emp => {
       const v = getShiftValue(emp.id, day);
-      return v === '9' || v === '7';
+      return v === '9';
     });
   };
 
@@ -359,6 +386,7 @@ export default function Schedule() {
     );
 
     const dow = getDayOfWeek(year, month, selectedDay);
+    const hours = getWorkHours(dow);
     const areaGrouped = getGroupedByArea(selectedDay);
     const weekNum = getISOWeek(year, month, selectedDay);
     const restEmployees = employees.filter(emp => getShiftValue(emp.id, selectedDay) === 'R');
@@ -368,6 +396,11 @@ export default function Schedule() {
         <div className="cal-detail-header">
           <h3>{month}/{selectedDay} {dayNamesFull[dow]}</h3>
           <button className="btn btn-small" onClick={() => setSelectedDay(null)}>X</button>
+        </div>
+
+        {/* Work hours for this day */}
+        <div style={{ background: '#f0f7ff', borderRadius: 6, padding: '8px 12px', marginBottom: 12, fontSize: 13 }}>
+          <strong>{t('workHours')}:</strong> {hours.label}
         </div>
 
         <div className="cal-detail-lunch">
@@ -398,7 +431,7 @@ export default function Schedule() {
                     <span className="cal-emp-group-tag" style={{ background: GROUP_COLORS[emp.shift_group]?.bg || '#f5f5f5', color: GROUP_COLORS[emp.shift_group]?.text || '#999' }}>
                       {emp.shift_group || '-'}
                     </span>
-                    <span className={`shift-cell shift-${v}`}>{v === '9' ? t('fullDay') : t('halfDay')}</span>
+                    <span className={`shift-cell shift-${v}`}>{hours.label}</span>
                   </div>
                 );
               })}
@@ -436,7 +469,7 @@ export default function Schedule() {
                     {emp.area ? tArea(emp.area) : t('areaUnassigned')}
                   </span>
                   <span className={`shift-cell ${v ? `shift-${v}` : 'shift-empty'}`}>
-                    {v === '9' ? `9 ${t('fullDay')}` : v === '7' ? `7 ${t('halfDay')}` : v === 'R' ? `R ${t('rest')}` : `— ${t('unscheduled')}`}
+                    {v === '9' ? `9 ${t('fullDay')}` : v === 'R' ? `R ${t('rest')}` : `— ${t('unscheduled')}`}
                   </span>
                 </div>
               );
@@ -517,6 +550,7 @@ export default function Schedule() {
 
         {renderDayDetail()}
       </div>
+      <ConfirmDialog message={confirmMessage} onConfirm={handleConfirm} onCancel={handleCancel} />
     </div>
   );
 }

@@ -8,12 +8,22 @@ export const getEmployee = (id) => API.get(`/employees/${id}`);
 export const createEmployee = (data) => API.post('/employees', data);
 export const updateEmployee = (id, data) => API.put(`/employees/${id}`, data);
 export const deleteEmployee = (id) => API.delete(`/employees/${id}`);
+export const resetEmployeePassword = (id, password) => API.put(`/employees/${id}/reset-password`, { password });
 
 // 排班 API
 export const getSchedules = (year, month) => API.get(`/schedules?year=${year}&month=${month}`);
 export const updateSchedule = (employeeId, date, shiftValue) =>
   API.put(`/schedules/${employeeId}/${date}`, { shift_value: shiftValue });
 export const batchUpdateSchedules = (schedules) => API.post('/schedules/batch', { schedules });
+
+// 文件 API
+export const getEmployeeFiles = (employeeId) => API.get(`/files/employee/${employeeId}`);
+export const uploadEmployeeFile = (employeeId, formData) =>
+  API.post(`/files/employee/${employeeId}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+export const deleteFile = (fileId) => API.delete(`/files/${fileId}`);
+export const getFileUrl = (fileId) => `/api/files/${fileId}/download`;
 
 // 公告 API
 export const getAnnouncements = () => API.get('/announcements');

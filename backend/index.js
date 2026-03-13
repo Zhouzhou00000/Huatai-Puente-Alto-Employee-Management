@@ -12,6 +12,7 @@ app.use(express.json());
 app.use('/api/employees', require('./routes/employees'));
 app.use('/api/schedules', require('./routes/schedules'));
 app.use('/api/announcements', require('./routes/announcements'));
+app.use('/api/files', require('./routes/files'));
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));

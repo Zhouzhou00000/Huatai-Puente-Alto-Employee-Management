@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, NavLink, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, NavLink, Navigate, Link } from 'react-router-dom';
+import Home from './pages/Home';
 import EmployeeList from './pages/EmployeeList';
+import EmployeeEdit from './pages/EmployeeEdit';
 import Schedule from './pages/Schedule';
 import Announcements from './pages/Announcements';
 import InternalManagement from './pages/InternalManagement';
@@ -33,15 +35,16 @@ function AppInner() {
     <Router>
       <div className="app">
         <header className="topbar">
-          <div className="topbar-left">
+          <Link to="/" className="topbar-left" style={{ textDecoration: 'none' }}>
             <img src="/Logo.jpg" alt="Huatai" className="topbar-logo" />
             <div className="topbar-brand">
               <span className="topbar-brand-name">Centro Comercial Huatai</span>
               <span className="topbar-brand-sub">{t('brandSub')}</span>
             </div>
-          </div>
+          </Link>
 
           <nav className="topbar-nav">
+            <NavLink to="/" end className="topbar-link">{t('navHome')}</NavLink>
             <NavLink to="/employees" className="topbar-link">{t('navEmployees')}</NavLink>
             <NavLink to="/schedule" className="topbar-link">{t('navSchedule')}</NavLink>
             <NavLink to="/announcements" className="topbar-link">{t('navAnnouncements')}</NavLink>
@@ -49,21 +52,31 @@ function AppInner() {
           </nav>
 
           <div className="topbar-right">
-            <button className="lang-toggle" onClick={toggleLang}>
-              {lang === 'zh' ? 'ES' : '中文'}
+            <button className="topbar-lang" onClick={toggleLang}>
+              <span className="topbar-lang-icon">{lang === 'zh' ? '🇨🇱' : '🇨🇳'}</span>
+              <span>{lang === 'zh' ? 'Español' : '中文'}</span>
             </button>
-            <span className="topbar-user">{user.name}</span>
-            <button className="topbar-logout" onClick={handleLogout}>{t('logout')}</button>
+            <div className="topbar-user-pill">
+              <span className="topbar-avatar">👤</span>
+              <span className="topbar-user-name">{user.name}</span>
+            </div>
+            <button className="topbar-logout-btn" onClick={handleLogout}>
+              <span className="topbar-logout-icon">↗</span>
+              {t('logout')}
+            </button>
           </div>
         </header>
 
         <main className="main">
           <Routes>
+            <Route path="/" element={<Home />} />
             <Route path="/employees" element={<EmployeeList />} />
+            <Route path="/employees/new" element={<EmployeeEdit />} />
+            <Route path="/employees/:id/edit" element={<EmployeeEdit />} />
             <Route path="/schedule" element={<Schedule />} />
             <Route path="/announcements" element={<Announcements />} />
             <Route path="/internal" element={<InternalManagement />} />
-            <Route path="*" element={<Navigate to="/employees" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
       </div>

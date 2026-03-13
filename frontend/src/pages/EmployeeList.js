@@ -1,25 +1,28 @@
-import React, { useState, useEffect } from 'react';
-import { getEmployees, createEmployee, updateEmployee, deleteEmployee } from '../api';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { getEmployees, deleteEmployee, getEmployeeFiles, uploadEmployeeFile, deleteFile, getFileUrl } from '../api';
 import { useLang } from '../i18n';
+import ConfirmDialog from '../components/ConfirmDialog';
+import useConfirm from '../hooks/useConfirm';
 
 const STATUSES = ['有合同-在职', '试用期', '日结/临时', '已离职'];
-const POSITIONS = ['Vendedor', 'Vendedora', 'Cajera/Reponedor', '管理'];
-const AREAS = ['游乐园', '零售', '化妆品', '保安', '柜台'];
-
-const emptyForm = {
-  name: '', rut: '', position: 'Vendedor', contract_status: '有合同-在职',
-  has_contract: true, shift_group: '', contract_end_date: '', nationality: 'Chile',
-  daily_wage: 0, area: '', notes: ''
-};
+const FILE_TYPES = ['contract', 'finiquito', 'photo', 'payslip'];
 
 export default function EmployeeList() {
   const [employees, setEmployees] = useState([]);
   const [filter, setFilter] = useState('全部');
   const [search, setSearch] = useState('');
-  const [showModal, setShowModal] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState(emptyForm);
+  const [fileModal, setFileModal] = useState(null); // employee object or null
+  const [empFiles, setEmpFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadType, setUploadType] = useState('contract');
+  const [payslipYear, setPayslipYear] = useState(new Date().getFullYear());
+  const [payslipMonth, setPayslipMonth] = useState(new Date().getMonth() + 1);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef(null);
+  const navigate = useNavigate();
   const { t, tStatus, tArea } = useLang();
+  const { confirmMessage, confirm, handleConfirm, handleCancel } = useConfirm();
 
   const load = () => getEmployees().then(r => setEmployees(r.data)).catch(console.error);
   useEffect(() => { load(); }, []);
@@ -33,42 +36,71 @@ export default function EmployeeList() {
   const chile = filtered.filter(e => e.nationality !== 'China');
   const china = filtered.filter(e => e.nationality === 'China');
 
-  const openAdd = () => { setForm(emptyForm); setEditingId(null); setShowModal(true); };
-  const openEdit = (emp) => {
-    setForm({
-      ...emp,
-      contract_end_date: emp.contract_end_date ? emp.contract_end_date.split('T')[0] : '',
-      shift_group: emp.shift_group || '',
-      area: emp.area || '',
-      rut: emp.rut || '',
-      notes: emp.notes || '',
-    });
-    setEditingId(emp.id);
-    setShowModal(true);
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      if (editingId) {
-        await updateEmployee(editingId, form);
-      } else {
-        await createEmployee(form);
-      }
-      setShowModal(false);
-      load();
-    } catch (err) {
-      alert('Error: ' + err.message);
-    }
-  };
-
   const handleDelete = async (id, name) => {
-    if (!window.confirm(`${t('confirmDelete')} ${name}?`)) return;
+    if (!await confirm(`${t('confirmDelete')} ${name}?`)) return;
     await deleteEmployee(id);
     load();
   };
 
-  const setField = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
+  // File management
+  const openFileModal = (emp) => {
+    setFileModal(emp);
+    setEmpFiles([]);
+    setUploadType('contract');
+    getEmployeeFiles(emp.id).then(({ data }) => setEmpFiles(data)).catch(console.error);
+  };
+
+  const doUpload = async (file) => {
+    if (!file || !fileModal) return;
+    if (file.size > 20 * 1024 * 1024) {
+      alert(t('fileSizeLimit'));
+      return;
+    }
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('file_type', uploadType);
+    if (uploadType === 'payslip') {
+      formData.append('payslip_year', payslipYear);
+      formData.append('payslip_month', payslipMonth);
+    }
+    setUploading(true);
+    try {
+      await uploadEmployeeFile(fileModal.id, formData);
+      getEmployeeFiles(fileModal.id).then(({ data }) => setEmpFiles(data));
+    } catch (err) {
+      alert(t('fileUploadFail') + (err.response?.data?.error || err.message));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleFileInput = (e) => {
+    const file = e.target.files[0];
+    doUpload(file);
+    e.target.value = '';
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    doUpload(file);
+  };
+
+  const handleFileDelete = async (fileId) => {
+    if (!await confirm(t('fileConfirmDelete'))) return;
+    try {
+      await deleteFile(fileId);
+      getEmployeeFiles(fileModal.id).then(({ data }) => setEmpFiles(data));
+    } catch (err) {
+      alert(t('fileDeleteFail') + err.message);
+    }
+  };
+
+  const fileTypeLabel = (type) => {
+    const map = { contract: t('fileContract'), finiquito: t('fileFiniquito'), photo: t('filePhoto'), payslip: t('filePayslip') };
+    return map[type] || type;
+  };
 
   const statusBadge = (status) => {
     const map = { '有合同-在职': 'badge-active', '试用期': 'badge-trial', '日结/临时': 'badge-daily', '已离职': 'badge-departed' };
@@ -109,8 +141,9 @@ export default function EmployeeList() {
                 <td>{emp.contract_end_date ? emp.contract_end_date.split('T')[0] : '—'}</td>
                 <td>{emp.notes || ''}</td>
                 <td>
-                  <div className="btn-group">
-                    <button className="btn btn-primary btn-small" onClick={() => openEdit(emp)}>{t('edit')}</button>
+                  <div className="btn-group" style={{ flexWrap: 'wrap' }}>
+                    <button className="btn btn-primary btn-small" onClick={() => navigate(`/employees/${emp.id}/edit`)}>{t('edit')}</button>
+                    <button className="btn btn-small" style={{ background: '#1a73e8', color: '#fff' }} onClick={() => openFileModal(emp)}>{t('fileDocuments')}</button>
                     <button className="btn btn-danger btn-small" onClick={() => handleDelete(emp.id, emp.name)}>{t('delete')}</button>
                   </div>
                 </td>
@@ -129,7 +162,7 @@ export default function EmployeeList() {
         <div style={{display:'flex', gap:12, alignItems:'center'}}>
           <input className="search-input" placeholder={t('search')} value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <button className="btn btn-success" onClick={openAdd}>{t('addEmployee')}</button>
+        <button className="btn btn-success" onClick={() => navigate('/employees/new')}>{t('addEmployee')}</button>
       </div>
 
       <div className="filter-tabs">
@@ -143,88 +176,101 @@ export default function EmployeeList() {
       {renderTable(t('chileSection'), chile)}
       {renderTable(t('chinaSection'), china)}
 
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <h2>{editingId ? t('editEmployee') : t('addEmployeeTitle')}</h2>
-            <form onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label>{t('formName')}</label>
-                <input required value={form.name} onChange={e => setField('name', e.target.value)} />
+      <ConfirmDialog message={confirmMessage} onConfirm={handleConfirm} onCancel={handleCancel} />
+
+      {/* File Management Modal */}
+      {fileModal && (
+        <div className="modal-overlay" onClick={() => setFileModal(null)}>
+          <div className="modal modal-wide" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h2 style={{ margin: 0 }}>{t('fileDocuments')} — {fileModal.name}</h2>
+              <button className="btn btn-small" onClick={() => setFileModal(null)}>&times;</button>
+            </div>
+
+            {/* Upload area */}
+            <div className="file-upload-section">
+              <div className="file-upload-controls">
+                <select value={uploadType} onChange={e => setUploadType(e.target.value)} className="file-type-select">
+                  {FILE_TYPES.map(ft => (
+                    <option key={ft} value={ft}>{fileTypeLabel(ft)}</option>
+                  ))}
+                </select>
+                {uploadType === 'payslip' && (
+                  <div className="payslip-date-picker">
+                    <select value={payslipYear} onChange={e => setPayslipYear(Number(e.target.value))}>
+                      {[...Array(5)].map((_, i) => {
+                        const y = new Date().getFullYear() - 2 + i;
+                        return <option key={y} value={y}>{y}</option>;
+                      })}
+                    </select>
+                    <select value={payslipMonth} onChange={e => setPayslipMonth(Number(e.target.value))}>
+                      {[...Array(12)].map((_, i) => (
+                        <option key={i + 1} value={i + 1}>{i + 1}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>{t('formRut')}</label>
-                  <input value={form.rut} onChange={e => setField('rut', e.target.value)} placeholder="xx.xxx.xxx-x" />
-                </div>
-                <div className="form-group">
-                  <label>{t('formPosition')}</label>
-                  <select value={form.position} onChange={e => setField('position', e.target.value)}>
-                    {POSITIONS.map(p => <option key={p}>{p}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>{t('formStatus')}</label>
-                  <select value={form.contract_status} onChange={e => setField('contract_status', e.target.value)}>
-                    {STATUSES.map(s => <option key={s} value={s}>{tStatus(s)}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>{t('formGroup')}</label>
-                  <select value={form.shift_group} onChange={e => setField('shift_group', e.target.value)}>
-                    <option value="">{t('formNone')}</option>
-                    <option value="A">A</option>
-                    <option value="B">B</option>
-                    <option value="C">C</option>
-                  </select>
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>{t('formArea')}</label>
-                  <select value={form.area} onChange={e => setField('area', e.target.value)}>
-                    <option value="">{t('formNone')}</option>
-                    {AREAS.map(a => <option key={a} value={a}>{tArea(a)}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>{t('formNationality')}</label>
-                  <select value={form.nationality} onChange={e => setField('nationality', e.target.value)}>
-                    <option value="Chile">Chile</option>
-                    <option value="China">China</option>
-                  </select>
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>{t('formContract')}</label>
-                  <select value={form.has_contract ? 'true' : 'false'} onChange={e => setField('has_contract', e.target.value === 'true')}>
-                    <option value="true">{t('formContractYes')}</option>
-                    <option value="false">{t('formContractNo')}</option>
-                  </select>
+
+              <div
+                className={`file-dropzone ${dragOver ? 'file-dropzone-active' : ''}`}
+                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp"
+                  onChange={handleFileInput}
+                  style={{ display: 'none' }}
+                  disabled={uploading}
+                />
+                <div className="file-dropzone-icon">+</div>
+                <div className="file-dropzone-text">
+                  {uploading ? t('fileUploading') : `${t('fileUpload')} PDF / ${t('filePhoto')}`}
                 </div>
               </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>{t('formExpiry')}</label>
-                  <input type="date" value={form.contract_end_date} onChange={e => setField('contract_end_date', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>{t('formWage')}</label>
-                  <input type="number" value={form.daily_wage} onChange={e => setField('daily_wage', parseInt(e.target.value) || 0)} />
-                </div>
-              </div>
-              <div className="form-group">
-                <label>{t('formNotes')}</label>
-                <textarea rows={2} value={form.notes} onChange={e => setField('notes', e.target.value)} />
-              </div>
-              <div className="form-actions">
-                <button type="button" className="btn" onClick={() => setShowModal(false)}>{t('cancel')}</button>
-                <button type="submit" className="btn btn-primary">{editingId ? t('save') : t('add')}</button>
-              </div>
-            </form>
+            </div>
+
+            {/* File list by type */}
+            <div className="file-groups">
+              {FILE_TYPES.map(type => {
+                const files = empFiles.filter(f => f.file_type === type);
+                if (files.length === 0) return null;
+                return (
+                  <div key={type} className="file-group">
+                    <h4 className="file-group-title">
+                      {fileTypeLabel(type)}
+                      <span className="file-count">({files.length})</span>
+                    </h4>
+                    <div className="file-list">
+                      {files.map(f => (
+                        <div key={f.id} className="file-item">
+                          <span className="file-icon">
+                            {f.mime_type === 'application/pdf' ? '📄' : '🖼️'}
+                          </span>
+                          <span className="file-name">
+                            {f.original_name}
+                            {f.file_type === 'payslip' && f.payslip_year && (
+                              <span className="file-date-tag">{f.payslip_year}/{String(f.payslip_month).padStart(2, '0')}</span>
+                            )}
+                          </span>
+                          <span className="file-size">{(f.file_size / 1024).toFixed(0)}KB</span>
+                          <a href={getFileUrl(f.id)} target="_blank" rel="noopener noreferrer" className="btn btn-small">{t('fileView')}</a>
+                          <button className="btn btn-danger btn-small" onClick={() => handleFileDelete(f.id)}>{t('fileDelete')}</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {empFiles.length === 0 && (
+                <p className="file-empty">{t('fileNoFiles')}</p>
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { getAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement } from '../api';
 import { useLang } from '../i18n';
+import ConfirmDialog from '../components/ConfirmDialog';
+import useConfirm from '../hooks/useConfirm';
 
 function Announcements() {
   const [list, setList] = useState([]);
@@ -8,6 +10,7 @@ function Announcements() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ title: '', content: '', priority: 'normal', pinned: false });
   const { t } = useLang();
+  const { confirmMessage, confirm, handleConfirm, handleCancel } = useConfirm();
 
   const PRIORITY_MAP = {
     urgent: { label: t('priorityUrgent'), className: 'badge-departed' },
@@ -54,7 +57,7 @@ function Announcements() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm(t('confirmDeleteAnnouncement'))) return;
+    if (!await confirm(t('confirmDeleteAnnouncement'))) return;
     try {
       await deleteAnnouncement(id);
       load();
@@ -101,6 +104,8 @@ function Announcements() {
           </div>
         ))}
       </div>
+
+      <ConfirmDialog message={confirmMessage} onConfirm={handleConfirm} onCancel={handleCancel} />
 
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>

@@ -8,6 +8,10 @@ async function initDB() {
     await pool.query(schema);
     console.log('Schema created successfully');
 
+    // Migrations: add columns if missing
+    await pool.query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT '普通员工'`);
+    console.log('Migration: role column ensured');
+
     // Check if data already exists
     const { rows } = await pool.query('SELECT COUNT(*) FROM employees');
     if (parseInt(rows[0].count) === 0) {

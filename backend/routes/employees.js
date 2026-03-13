@@ -27,12 +27,12 @@ router.get('/:id', async (req, res) => {
 
 // 新增员工
 router.post('/', async (req, res) => {
-  const { name, rut, position, contract_status, has_contract, shift_group, contract_end_date, nationality, daily_wage, area, notes } = req.body;
+  const { name, rut, position, contract_status, has_contract, shift_group, contract_end_date, nationality, daily_wage, area, role, notes } = req.body;
   try {
     const { rows } = await db.query(
-      `INSERT INTO employees (name, rut, position, contract_status, has_contract, shift_group, contract_end_date, nationality, daily_wage, area, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [name, rut || null, position, contract_status, has_contract, shift_group || null, contract_end_date || null, nationality || 'Chile', daily_wage || 0, area || null, notes || null]
+      `INSERT INTO employees (name, rut, position, contract_status, has_contract, shift_group, contract_end_date, nationality, daily_wage, area, role, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      [name, rut || null, position, contract_status, has_contract, shift_group || null, contract_end_date || null, nationality || 'Chile', daily_wage || 0, area || null, role || '普通员工', notes || null]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -42,15 +42,31 @@ router.post('/', async (req, res) => {
 
 // 更新员工
 router.put('/:id', async (req, res) => {
-  const { name, rut, position, contract_status, has_contract, shift_group, contract_end_date, nationality, daily_wage, area, notes } = req.body;
+  const { name, rut, position, contract_status, has_contract, shift_group, contract_end_date, nationality, daily_wage, area, role, notes } = req.body;
   try {
     const { rows } = await db.query(
-      `UPDATE employees SET name=$1, rut=$2, position=$3, contract_status=$4, has_contract=$5, shift_group=$6, contract_end_date=$7, nationality=$8, daily_wage=$9, area=$10, notes=$11, updated_at=NOW()
-       WHERE id=$12 RETURNING *`,
-      [name, rut || null, position, contract_status, has_contract, shift_group || null, contract_end_date || null, nationality, daily_wage || 0, area || null, notes || null, req.params.id]
+      `UPDATE employees SET name=$1, rut=$2, position=$3, contract_status=$4, has_contract=$5, shift_group=$6, contract_end_date=$7, nationality=$8, daily_wage=$9, area=$10, role=$11, notes=$12, updated_at=NOW()
+       WHERE id=$13 RETURNING *`,
+      [name, rut || null, position, contract_status, has_contract, shift_group || null, contract_end_date || null, nationality, daily_wage || 0, area || null, role || '普通员工', notes || null, req.params.id]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
     res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 重置密码
+router.put('/:id/reset-password', async (req, res) => {
+  const { password } = req.body;
+  const newPassword = password || '123456';
+  try {
+    const { rows } = await db.query(
+      'UPDATE employees SET password = $1, updated_at = NOW() WHERE id = $2 RETURNING id, name',
+      [newPassword, req.params.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.json({ message: 'Password reset', employee: rows[0] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

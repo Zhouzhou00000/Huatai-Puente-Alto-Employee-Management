@@ -19,5 +19,5 @@ INSERT INTO employees (name, rut, position, contract_status, has_contract, shift
 ('Camila Fernanda Aronda Maturana', NULL, 'Vendedora', '已离职', false, NULL, 'Chile', 0, NULL),
 ('Claudia Andrea Yupanqui Vargas', NULL, 'Vendedora', '已离职', false, NULL, 'Chile', 0, NULL),
 -- 🇨🇳 中国员工
-('Xingting Li (李兴婷)', NULL, '管理', '有合同-在职', false, 'C', 'China', 0, NULL),
+('Xingting Li (李狗婷)', NULL, '管理', '有合同-在职', false, 'C', 'China', 0, NULL),
 ('Zhengmiao (郑淼)', NULL, '管理', '有合同-在职', true, NULL, 'China', 0, NULL);
