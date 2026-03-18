@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS employees (
   area VARCHAR(30),                          -- 区域: 游乐园, 零售, 化妆品, 保安, 柜台
   role VARCHAR(20) DEFAULT '普通员工',        -- 权限: 管理员, 主管, 普通员工
   password VARCHAR(100) DEFAULT '123456',    -- 登录密码
+  phone VARCHAR(30),                         -- 电话号码
+  email VARCHAR(200),                        -- 邮箱
+  contract_start_date DATE,                  -- 合同开始日
   notes TEXT,                                -- 备注
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
@@ -56,6 +59,50 @@ CREATE TABLE IF NOT EXISTS employee_files (
   payslip_month INTEGER,                 -- 工资单月份 (仅payslip类型)
   created_at TIMESTAMP DEFAULT NOW()
 );
+
+-- 系统用户表 (登录账号)
+CREATE TABLE IF NOT EXISTS users (
+  id SERIAL PRIMARY KEY,
+  username VARCHAR(50) NOT NULL UNIQUE,      -- 登录用户名
+  password VARCHAR(100) NOT NULL,            -- 密码
+  name VARCHAR(200) NOT NULL,                -- 显示名称
+  role VARCHAR(20) DEFAULT 'staff',          -- admin, staff
+  active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 默认管理员账号
+INSERT INTO users (username, password, name, role) VALUES
+  ('admin', 'huatai2026', '管理员', 'admin'),
+  ('xingting', '123456', '李兴婷', 'admin'),
+  ('zhengmiao', '123456', '郑淼', 'admin'),
+  ('juancarlos', '123456', 'Juan Carlos', 'staff')
+ON CONFLICT (username) DO NOTHING;
+
+-- 考勤记录表 (每天每人一条记录)
+CREATE TABLE IF NOT EXISTS attendance (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  status VARCHAR(20) NOT NULL DEFAULT '未记录',
+    -- 状态: 在场, 请假, 缺勤, 休息
+  note TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(employee_id, date)
+);
+
+-- 系统设置表
+CREATE TABLE IF NOT EXISTS settings (
+  key VARCHAR(50) PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+INSERT INTO settings (key, value) VALUES
+  ('mobile_only', 'false')
+ON CONFLICT (key) DO NOTHING;
 
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(work_date);
