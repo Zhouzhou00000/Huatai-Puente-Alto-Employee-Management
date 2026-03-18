@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { getAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement } from '../api';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { getAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement, translateText } from '../api';
 import { useLang } from '../i18n';
 import ConfirmDialog from '../components/ConfirmDialog';
 import useConfirm from '../hooks/useConfirm';
@@ -7,10 +7,19 @@ import useConfirm from '../hooks/useConfirm';
 function Announcements() {
   const [list, setList] = useState([]);
   const [showModal, setShowModal] = useState(false);
+  const [showTranslateModal, setShowTranslateModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ title: '', content: '', priority: 'normal', pinned: false });
+  const [zhTitle, setZhTitle] = useState('');
+  const [zhContent, setZhContent] = useState('');
+  const [esTitle, setEsTitle] = useState('');
+  const [esContent, setEsContent] = useState('');
+  const [translating, setTranslating] = useState(false);
+  const [transForm, setTransForm] = useState({ priority: 'normal', pinned: false });
   const { t } = useLang();
   const { confirmMessage, confirm, handleConfirm, handleCancel } = useConfirm();
+  const titleTimer = useRef(null);
+  const contentTimer = useRef(null);
 
   const PRIORITY_MAP = {
     urgent: { label: t('priorityUrgent'), className: 'badge-departed' },
@@ -29,10 +38,47 @@ function Announcements() {
 
   useEffect(() => { load(); }, []);
 
+  const doTranslate = useCallback(async (text, setter) => {
+    if (!text.trim()) { setter(''); return; }
+    try {
+      const { data } = await translateText(text);
+      setter(data.translated);
+    } catch (err) {
+      console.error('Translation error:', err);
+    }
+  }, []);
+
+  // Auto-translate title with debounce
+  useEffect(() => {
+    if (!showTranslateModal) return;
+    clearTimeout(titleTimer.current);
+    if (!zhTitle.trim()) { setEsTitle(''); return; }
+    titleTimer.current = setTimeout(() => doTranslate(zhTitle, setEsTitle), 600);
+    return () => clearTimeout(titleTimer.current);
+  }, [zhTitle, showTranslateModal, doTranslate]);
+
+  // Auto-translate content with debounce
+  useEffect(() => {
+    if (!showTranslateModal) return;
+    clearTimeout(contentTimer.current);
+    if (!zhContent.trim()) { setEsContent(''); return; }
+    contentTimer.current = setTimeout(() => doTranslate(zhContent, setEsContent), 600);
+    return () => clearTimeout(contentTimer.current);
+  }, [zhContent, showTranslateModal, doTranslate]);
+
   const openNew = () => {
     setEditing(null);
     setForm({ title: '', content: '', priority: 'normal', pinned: false });
     setShowModal(true);
+  };
+
+  const openTranslate = () => {
+    setZhTitle('');
+    setZhContent('');
+    setEsTitle('');
+    setEsContent('');
+    setTransForm({ priority: 'normal', pinned: false });
+    setShowTranslateModal(true);
   };
 
   const openEdit = (item) => {
@@ -56,6 +102,41 @@ function Announcements() {
     }
   };
 
+  const handleTranslatePublish = async () => {
+    if (!zhTitle.trim() && !esTitle.trim()) return;
+    // Combine Chinese + Spanish into one announcement
+    const title = esTitle.trim() ? `${zhTitle}\n${esTitle}` : zhTitle;
+    const content = esContent.trim() ? `${zhContent}\n\n---\n\n${esContent}` : zhContent;
+    try {
+      await createAnnouncement({
+        title: title,
+        content: content,
+        priority: transForm.priority,
+        pinned: transForm.pinned,
+      });
+      setShowTranslateModal(false);
+      load();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleManualTranslate = async () => {
+    setTranslating(true);
+    try {
+      const [titleRes, contentRes] = await Promise.all([
+        zhTitle.trim() ? translateText(zhTitle) : { data: { translated: '' } },
+        zhContent.trim() ? translateText(zhContent) : { data: { translated: '' } },
+      ]);
+      setEsTitle(titleRes.data.translated);
+      setEsContent(contentRes.data.translated);
+    } catch (err) {
+      alert('翻译失败: ' + err.message);
+    } finally {
+      setTranslating(false);
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!await confirm(t('confirmDeleteAnnouncement'))) return;
     try {
@@ -75,7 +156,10 @@ function Announcements() {
     <div>
       <div className="toolbar">
         <h2 className="section-title" style={{ margin: 0 }}>{t('announcementsTitle')}</h2>
-        <button className="btn btn-primary" onClick={openNew}>{t('publishAnnouncement')}</button>
+        <div className="btn-group">
+          <button className="btn btn-primary" onClick={openNew}>{t('publishAnnouncement')}</button>
+          <button className="btn btn-success" onClick={openTranslate}>翻译发布</button>
+        </div>
       </div>
 
       {list.length === 0 && <p style={{ color: '#999', textAlign: 'center', padding: 40 }}>{t('noAnnouncements')}</p>}
@@ -139,6 +223,104 @@ function Announcements() {
             <div className="form-actions">
               <button className="btn" onClick={() => setShowModal(false)}>{t('cancel')}</button>
               <button className="btn btn-primary" onClick={handleSave}>{t('save')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTranslateModal && (
+        <div className="modal-overlay" onClick={() => setShowTranslateModal(false)}>
+          <div className="modal gt-modal" onClick={e => e.stopPropagation()}>
+            <div className="gt-container">
+              {/* Left: Chinese */}
+              <div className="gt-panel gt-panel-source">
+                <div className="gt-lang-bar">
+                  <span className="gt-lang-tab active">中文</span>
+                </div>
+                <div className="gt-input-area">
+                  <input
+                    className="gt-title-input"
+                    value={zhTitle}
+                    onChange={e => setZhTitle(e.target.value)}
+                    placeholder="输入中文标题..."
+                  />
+                  <textarea
+                    className="gt-textarea"
+                    value={zhContent}
+                    onChange={e => setZhContent(e.target.value)}
+                    placeholder="输入中文内容..."
+                  />
+                </div>
+              </div>
+
+              {/* Center: translate button */}
+              <div className="gt-divider">
+                <button
+                  className="gt-swap-btn"
+                  onClick={handleManualTranslate}
+                  disabled={translating || (!zhTitle.trim() && !zhContent.trim())}
+                  title="翻译"
+                >
+                  {translating ? (
+                    <span className="gt-spinner" />
+                  ) : (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12h14" /><path d="M12 5l7 7-7 7" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+
+              {/* Right: Spanish */}
+              <div className="gt-panel gt-panel-target">
+                <div className="gt-lang-bar">
+                  <span className="gt-lang-tab active">Español</span>
+                </div>
+                <div className="gt-input-area">
+                  <input
+                    className="gt-title-input"
+                    value={esTitle}
+                    onChange={e => setEsTitle(e.target.value)}
+                    placeholder="Traducción del título..."
+                  />
+                  <textarea
+                    className="gt-textarea"
+                    value={esContent}
+                    onChange={e => setEsContent(e.target.value)}
+                    placeholder="Traducción del contenido..."
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Options row */}
+            <div className="gt-options">
+              <div className="gt-option-group">
+                <label>{t('formPriority')}</label>
+                <select value={transForm.priority} onChange={e => setTransForm({...transForm, priority: e.target.value})}>
+                  <option value="urgent">{t('priorityUrgent')}</option>
+                  <option value="normal">{t('priorityNormal')}</option>
+                  <option value="low">{t('priorityLow')}</option>
+                </select>
+              </div>
+              <div className="gt-option-group">
+                <label>{t('formPinned')}</label>
+                <select value={transForm.pinned ? 'yes' : 'no'} onChange={e => setTransForm({...transForm, pinned: e.target.value === 'yes'})}>
+                  <option value="no">{t('no')}</option>
+                  <option value="yes">{t('yes')}</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="gt-actions">
+              <button className="btn" onClick={() => setShowTranslateModal(false)}>{t('cancel')}</button>
+              <button
+                className="btn btn-success"
+                onClick={handleTranslatePublish}
+                disabled={!zhTitle.trim() && !esTitle.trim()}
+              >
+                发布 / Publicar
+              </button>
             </div>
           </div>
         </div>

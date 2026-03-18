@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getEmployees, getAnnouncements } from '../api';
+import { getEmployees, getAnnouncements, getAttendance, setAttendance } from '../api';
 import { useLang } from '../i18n';
 
 export default function Home() {
@@ -8,8 +8,12 @@ export default function Home() {
   const [stats, setStats] = useState({ total: 0, active: 0, trial: 0, daily: 0, departed: 0 });
   const [announcements, setAnnouncements] = useState([]);
   const [soonExpiring, setSoonExpiring] = useState([]);
+  const [attendance, setAttendanceMap] = useState({}); // { employee_id: status }
+  const [attendanceNote, setAttendanceNote] = useState({}); // { employee_id: note }
   const navigate = useNavigate();
   const { t, tStatus, tArea } = useLang();
+
+  const today = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
     getEmployees().then(({ data }) => {
@@ -32,7 +36,14 @@ export default function Home() {
     getAnnouncements().then(({ data }) => {
       setAnnouncements(data.slice(0, 3));
     }).catch(console.error);
-  }, []);
+
+    getAttendance(today).then(({ data }) => {
+      const map = {}, noteMap = {};
+      data.forEach(r => { map[r.employee_id] = r.status; noteMap[r.employee_id] = r.note || ''; });
+      setAttendanceMap(map);
+      setAttendanceNote(noteMap);
+    }).catch(console.error);
+  }, [today]);
 
   const now = new Date();
   const hour = now.getHours();
@@ -47,6 +58,29 @@ export default function Home() {
   ];
 
   const activeEmployees = employees.filter(e => e.contract_status !== '已离职');
+
+  const handleAttendance = async (empId, status) => {
+    setAttendanceMap(prev => ({ ...prev, [empId]: status }));
+    try {
+      await setAttendance(empId, today, status, attendanceNote[empId] || '');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const ATTENDANCE_STATUSES = ['在场', '请假', '缺勤', '休息'];
+  const attendanceStyle = {
+    '在场':  { bg: '#e8f5e9', color: '#2e7d32', border: '#a5d6a7' },
+    '请假':  { bg: '#fff8e1', color: '#f57f17', border: '#ffe082' },
+    '缺勤':  { bg: '#fce4ec', color: '#c62828', border: '#f48fb1' },
+    '休息':  { bg: '#f5f5f5', color: '#757575', border: '#e0e0e0' },
+  };
+
+  const attendanceSummary = activeEmployees.reduce((acc, e) => {
+    const s = attendance[e.id] || '未记录';
+    acc[s] = (acc[s] || 0) + 1;
+    return acc;
+  }, {});
 
   // Report data
   const statusReport = useMemo(() => {
@@ -92,19 +126,10 @@ export default function Home() {
   }, [activeEmployees, t]);
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-      {/* Welcome Banner */}
-      <div style={{
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
-        borderRadius: 16, padding: '36px 40px', marginBottom: 24,
-        color: 'white', position: 'relative', overflow: 'hidden',
-      }}>
-        <div style={{ position: 'absolute', top: -30, right: -30, width: 200, height: 200, borderRadius: '50%', background: 'rgba(108,92,231,0.15)' }} />
-        <h1 style={{ fontSize: 30, fontWeight: 700, marginBottom: 6, position: 'relative' }}>{greeting}</h1>
-        <p style={{ fontSize: 15, opacity: 0.7, position: 'relative' }}>
-          {now.toLocaleDateString(t('locale'), { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-        </p>
-      </div>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 20, alignItems: 'start' }}>
+
+      {/* Main content */}
+      <div style={{ minWidth: 0 }}>
 
       {/* Stats Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 24 }}>
@@ -146,41 +171,55 @@ export default function Home() {
 
       {/* Reports - 3 columns */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20, marginBottom: 24 }}>
-        {/* Status Distribution */}
         <ReportCard title={t('reportByStatus')} data={statusReport} unit={t('reportPeople')} />
-        {/* Area Distribution */}
         <ReportCard title={t('reportByArea')} data={areaReport} unit={t('reportPeople')} />
-        {/* Group Distribution */}
         <ReportCard title={t('reportByGroup')} data={groupReport} unit={t('reportPeople')} />
       </div>
 
-      {/* Recent Announcements */}
-      {announcements.length > 0 && (
-        <div style={{
-          background: 'white', borderRadius: 14, padding: '20px 24px',
-          marginBottom: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1a3a5c', margin: 0 }}>{t('homeRecentAnnouncements')}</h3>
-            <button className="btn btn-small btn-primary" onClick={() => navigate('/announcements')}>{t('homeViewAll')}</button>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {announcements.map(item => (
-              <div key={item.id} style={{
-                padding: '12px 16px', borderRadius: 8,
-                background: item.pinned ? '#fffdf5' : '#f8f9fa',
-                borderLeft: `3px solid ${item.pinned ? '#e53935' : '#6c5ce7'}`,
-                cursor: 'pointer',
-              }} onClick={() => navigate('/announcements')}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {item.pinned && <span style={{ background: '#e53935', color: 'white', padding: '1px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600 }}>{t('pinned')}</span>}
-                  <span style={{ fontSize: 14, fontWeight: 600, color: '#1a1a2e' }}>{item.title}</span>
-                </div>
-              </div>
+      {/* Today Attendance */}
+      <div style={{ background: 'white', borderRadius: 14, padding: '24px', marginBottom: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1a3a5c', margin: 0 }}>
+            今日考勤 — {today}
+          </h3>
+          <div style={{ display: 'flex', gap: 10, fontSize: 13 }}>
+            {[['在场', '#2e7d32'], ['请假', '#f57f17'], ['缺勤', '#c62828'], ['休息', '#757575'], ['未记录', '#aaa']].map(([label, color]) => (
+              attendanceSummary[label] > 0 && (
+                <span key={label} style={{ color, fontWeight: 600 }}>
+                  {label} {attendanceSummary[label]}
+                </span>
+              )
             ))}
           </div>
         </div>
-      )}
+        <div className="attendance-grid">
+          {activeEmployees.map(emp => {
+            const status = attendance[emp.id];
+            const style = attendanceStyle[status] || { bg: '#f8f9fa', color: '#aaa', border: '#e8e8e8' };
+            return (
+              <div key={emp.id} className="attendance-card" style={{ borderColor: style.border, background: style.bg }}>
+                <div className="attendance-name">{emp.name}</div>
+                <div className="attendance-sub">{emp.position}{emp.shift_group ? ` · 组${emp.shift_group}` : ''}</div>
+                <div className="attendance-btns">
+                  {ATTENDANCE_STATUSES.map(s => {
+                    const st = attendanceStyle[s];
+                    return (
+                      <button
+                        key={s}
+                        className={`attendance-btn ${status === s ? 'active' : ''}`}
+                        style={status === s ? { background: st.color, color: '#fff', borderColor: st.color } : {}}
+                        onClick={() => handleAttendance(emp.id, s)}
+                      >
+                        {s}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Employee Data Table */}
       <div style={{
@@ -235,6 +274,43 @@ export default function Home() {
           </table>
         </div>
       </div>
+
+      </div>{/* end main content */}
+
+      {/* Sidebar - Announcements */}
+      <div style={{ position: 'sticky', top: 20 }}>
+        <div style={{ background: 'white', borderRadius: 14, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1a3a5c', margin: 0 }}>{t('homeRecentAnnouncements')}</h3>
+            <button className="btn btn-small btn-primary" onClick={() => navigate('/announcements')}>{t('homeViewAll')}</button>
+          </div>
+          {announcements.length === 0 ? (
+            <div style={{ color: '#bbb', fontSize: 13, textAlign: 'center', padding: '20px 0' }}>暂无公告</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {announcements.map(item => (
+                <div key={item.id} style={{
+                  padding: '12px 14px', borderRadius: 10,
+                  background: item.pinned ? '#fffdf5' : '#f8f9fa',
+                  borderLeft: `3px solid ${item.pinned ? '#e53935' : '#6c5ce7'}`,
+                  cursor: 'pointer',
+                }} onClick={() => navigate('/announcements')}>
+                  {item.pinned && (
+                    <span style={{ background: '#e53935', color: 'white', padding: '1px 7px', borderRadius: 10, fontSize: 10, fontWeight: 600, display: 'inline-block', marginBottom: 4 }}>
+                      {t('pinned')}
+                    </span>
+                  )}
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a2e', lineHeight: 1.4 }}>{item.title}</div>
+                  <div style={{ fontSize: 11, color: '#999', marginTop: 4 }}>
+                    {item.created_at ? new Date(item.created_at).toLocaleDateString() : ''}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
     </div>
   );
 }

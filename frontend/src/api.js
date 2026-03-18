@@ -25,6 +25,41 @@ export const uploadEmployeeFile = (employeeId, formData) =>
 export const deleteFile = (fileId) => API.delete(`/files/${fileId}`);
 export const getFileUrl = (fileId) => `/api/files/${fileId}/download`;
 
+// 用户 API
+export const loginUser = (username, password) => API.post('/users/login', { username, password });
+export const getUsers = () => API.get('/users');
+export const createUser = (data) => API.post('/users', data);
+export const updateUser = (id, data) => API.put(`/users/${id}`, data);
+export const deleteUser = (id) => API.delete(`/users/${id}`);
+export const resetUserPassword = (id, password) => API.put(`/users/${id}/reset-password`, { password });
+export const getUser = (id) => API.get(`/users/${id}`);
+export const updateProfile = (id, data) => API.put(`/users/${id}/profile`, data);
+export const uploadAvatar = (id, formData) =>
+  API.post(`/users/${id}/avatar`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+
+// 打卡 API
+export const getClockRecords = (date) => API.get(`/clock?date=${date}`);
+export const getEmployeeClockRecord = (employeeId, date) => API.get(`/clock/employee/${employeeId}?date=${date}`);
+export const clockIn = (employee_id) => API.post('/clock/in', { employee_id });
+export const clockOut = (employee_id) => API.post('/clock/out', { employee_id });
+
+// 考勤 API
+export const getAttendance = (date) => API.get(`/attendance?date=${date}`);
+export const setAttendance = (employee_id, date, status, note) =>
+  API.post('/attendance', { employee_id, date, status, note });
+
+// 系统设置 API
+export const getSettings = () => API.get('/settings');
+export const updateSetting = (key, value) => API.put(`/settings/${key}`, { value });
+
+// 翻译 API
+export const translateText = (text, from = 'zh-CN', to = 'es') => API.post('/translate', { text, from, to });
+
+// WhatsApp API
+export const sendWhatsApp = (phone, message) => API.post('/whatsapp/send', { phone, message });
+export const sendWhatsAppBatch = (recipients) => API.post('/whatsapp/send-batch', { recipients });
+export const testWhatsApp = () => API.get('/whatsapp/test');
+
 // 公告 API
 export const getAnnouncements = () => API.get('/announcements');
 export const createAnnouncement = (data) => API.post('/announcements', data);

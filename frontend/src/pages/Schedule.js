@@ -6,26 +6,29 @@ import useConfirm from '../hooks/useConfirm';
 
 const SHIFT_CYCLE = ['9', 'R'];
 
-// Lunch slots by group — rotate weekly
-const LUNCH_SLOTS = [
-  { label: '13:00 - 14:00', short: '13:00' },
-  { label: '14:00 - 15:00', short: '14:00' },
-  { label: '15:00 - 16:00', short: '15:00' },
-];
+// Lunch slots by group (fixed, no rotation)
+const LUNCH_SLOTS = {
+  A: { label: '12:30 - 13:30', short: '12:30' },
+  B: { label: '13:30 - 14:30', short: '13:30' },
+  C: { label: '14:30 - 15:30', short: '14:30' },
+};
 
-function getLunchSlot(group, weekIndex) {
-  const groupOffset = { A: 0, B: 1, C: 2 };
-  const offset = groupOffset[group];
-  if (offset === undefined) return null;
-  const slotIndex = (offset + weekIndex) % 3;
-  return LUNCH_SLOTS[slotIndex];
+function getLunchSlot(group) {
+  return LUNCH_SLOTS[group] || null;
 }
 
-// Work hours based on day of week
-function getWorkHours(dow) {
-  // dow: 0=Sun, 1=Mon ... 6=Sat
-  if (dow === 0) return { start: '11:00', end: '18:00', label: '11:00–18:00' };
-  return { start: '10:00', end: '20:00', label: '10:00–20:00' };
+// Turno Nº1: Lun-Vie 10:00-18:00, Sáb 10:00-20:00, Dom Libre
+// Turno Nº2: Lun-Vie 11:30-20:00 (1 día libre), Sáb 11:00-20:00, Dom 11:00-18:00
+function getWorkHours(dow, turno) {
+  if (turno === 2) {
+    if (dow === 0) return { start: '11:00', end: '18:00', label: '11:00–18:00' };
+    if (dow === 6) return { start: '11:00', end: '20:00', label: '11:00–20:00' };
+    return { start: '11:30', end: '20:00', label: '11:30–20:00' };
+  }
+  // Turno 1 (default)
+  if (dow === 0) return { start: '', end: '', label: 'Libre' };
+  if (dow === 6) return { start: '10:00', end: '20:00', label: '10:00–20:00' };
+  return { start: '10:00', end: '18:00', label: '10:00–18:00' };
 }
 
 function getISOWeek(year, month, day) {
@@ -124,49 +127,13 @@ export default function Schedule() {
     try {
       const schedules = [];
 
-      // Group employees by their shift_group (A, B, C) and area
-      const groupedEmps = { A: [], B: [], C: [], none: [] };
-      employees.forEach(emp => {
-        const g = emp.shift_group;
-        if (g && groupedEmps[g]) {
-          groupedEmps[g].push(emp);
-        } else {
-          groupedEmps.none.push(emp);
-        }
-      });
-
       for (let day = 1; day <= daysInMonth; day++) {
         const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const dow = getDayOfWeek(year, month, day);
 
-        // Each group gets a different rest day pattern
-        // Group A rests on: week rotation (Mon, Tue, Wed...)
-        // Group B rests offset by 2 days
-        // Group C rests offset by 4 days
-        // This ensures each day has employees from all groups working
-        const weekOfMonth = Math.floor((day - 1) / 7);
-
-        ['A', 'B', 'C'].forEach((group, groupIdx) => {
-          groupedEmps[group].forEach((emp, empIdx) => {
-            // Each employee in the group gets a different rest day
-            // Stagger within group so not everyone rests on same day
-            const restDay = (empIdx + groupIdx * 2 + weekOfMonth) % 7;
-            // Map restDay to actual dow (1=Mon...0=Sun)
-            const mappedDow = restDay === 6 ? 0 : restDay + 1;
-            const isRest = dow === mappedDow;
-
-            schedules.push({
-              employee_id: emp.id,
-              work_date: dateStr,
-              shift_value: isRest ? 'R' : '9'
-            });
-          });
-        });
-
-        // Employees without group
-        groupedEmps.none.forEach((emp, idx) => {
-          const restDow = idx % 7;
-          const isRest = dow === restDow;
+        // All employees: Lun-Sáb trabajo, Domingo libre
+        employees.forEach(emp => {
+          const isRest = dow === 0; // Sunday = rest
           schedules.push({
             employee_id: emp.id,
             work_date: dateStr,
@@ -240,15 +207,16 @@ export default function Schedule() {
 
     // Work time info section
     html += `<div class="time-info">`;
-    html += `<strong>Horarios de trabajo:</strong>&nbsp;&nbsp;`;
-    html += `<span class="time-row"><span class="time-badge" style="background:#d4edda;color:#155724">9</span> Lun–Sáb: 10:00 – 20:00 &nbsp;|&nbsp; Dom: 11:00 – 18:00</span>`;
+    html += `<strong>Turno Nº1:</strong> Lun–Vie: 10:00–18:00 &nbsp;|&nbsp; Sáb: 10:00–20:00 &nbsp;|&nbsp; Dom: Libre`;
+    html += `<br><strong>Turno Nº2 (1 día libre):</strong> Lun–Vie: 11:30–20:00 &nbsp;|&nbsp; Sáb: 11:00–20:00 &nbsp;|&nbsp; Dom: 11:00–18:00`;
+    html += `<br><span class="time-row"><span class="time-badge" style="background:#d4edda;color:#155724">9</span> Trabajando</span>`;
     html += `<span class="time-row"><span class="time-badge" style="background:#f8d7da;color:#721c24">R</span> Descanso</span>`;
     html += `</div>`;
 
-    // Lunch rotation info
+    // Lunch info
     html += `<div class="time-info" style="font-size:10px">`;
-    html += `<strong>Almuerzo (1 hora, rotación semanal):</strong>&nbsp;&nbsp;`;
-    html += `Grupo A: 13:00–14:00 &nbsp;|&nbsp; Grupo B: 14:00–15:00 &nbsp;|&nbsp; Grupo C: 15:00–16:00`;
+    html += `<strong>Almuerzo (1 hora):</strong>&nbsp;&nbsp;`;
+    html += `Grupo A: 12:30–13:30 &nbsp;|&nbsp; Grupo B: 13:30–14:30 &nbsp;|&nbsp; Grupo C: 14:30–15:30`;
     html += `</div>`;
 
     const areaOrder = [...AREAS, '未分配'];
@@ -275,7 +243,11 @@ export default function Schedule() {
         html += `<tr>`;
         html += `<td class="name-cell">${getShortName(emp.name)}</td>`;
         html += `<td class="group-cell">${emp.shift_group || '-'}</td>`;
-        html += `<td style="font-size:9px;white-space:nowrap;color:#555">L-S 10–20<br>D 11–18</td>`;
+        if (emp.turno === 2) {
+          html += `<td style="font-size:9px;white-space:nowrap;color:#555">T2<br>L-V 11:30–20<br>S 11–20<br>D 11–18</td>`;
+        } else {
+          html += `<td style="font-size:9px;white-space:nowrap;color:#555">T1<br>L-V 10–18<br>S 10–20<br>D Libre</td>`;
+        }
         let workDays = 0, restDays = 0;
         days.forEach(d => {
           const v = getShiftValue(emp.id, d);
@@ -360,13 +332,11 @@ export default function Schedule() {
   const dayNamesFull = t('dayNamesFull');
 
   const renderLunchLegend = () => {
-    const refDay = selectedDay || Math.min(now.getDate(), daysInMonth);
-    const weekNum = getISOWeek(year, month, refDay);
     return (
       <div className="cal-lunch-legend">
         <span className="cal-lunch-title">{t('lunchRotation')}</span>
         {['A', 'B', 'C'].map(g => {
-          const slot = getLunchSlot(g, weekNum);
+          const slot = getLunchSlot(g);
           const color = GROUP_COLORS[g];
           return (
             <span key={g} className="cal-lunch-item" style={{ background: color.bg, color: color.text, borderColor: color.border }}>
@@ -386,10 +356,10 @@ export default function Schedule() {
     );
 
     const dow = getDayOfWeek(year, month, selectedDay);
-    const hours = getWorkHours(dow);
     const areaGrouped = getGroupedByArea(selectedDay);
-    const weekNum = getISOWeek(year, month, selectedDay);
     const restEmployees = employees.filter(emp => getShiftValue(emp.id, selectedDay) === 'R');
+    const hours1 = getWorkHours(dow, 1);
+    const hours2 = getWorkHours(dow, 2);
 
     return (
       <div className="cal-detail-panel">
@@ -400,13 +370,14 @@ export default function Schedule() {
 
         {/* Work hours for this day */}
         <div style={{ background: '#f0f7ff', borderRadius: 6, padding: '8px 12px', marginBottom: 12, fontSize: 13 }}>
-          <strong>{t('workHours')}:</strong> {hours.label}
+          <div><strong>Turno 1:</strong> {hours1.label}</div>
+          <div><strong>Turno 2:</strong> {hours2.label}</div>
         </div>
 
         <div className="cal-detail-lunch">
           <h4>{t('lunchTitle')}</h4>
           {['A', 'B', 'C'].map(g => {
-            const slot = getLunchSlot(g, weekNum);
+            const slot = getLunchSlot(g);
             const color = GROUP_COLORS[g];
             return (
               <div key={g} className="cal-detail-lunch-row">
@@ -425,13 +396,14 @@ export default function Schedule() {
               <h4 style={{ color: color.text }}>{tArea(area)} ({areaGrouped[area].length}{t('people')})</h4>
               {areaGrouped[area].map(emp => {
                 const v = getShiftValue(emp.id, selectedDay);
+                const empHours = getWorkHours(dow, emp.turno || 1);
                 return (
                   <div key={emp.id} className="cal-emp-row" onClick={() => handleShiftToggle(emp.id, selectedDay)}>
                     <span className="cal-emp-name">{emp.name}</span>
                     <span className="cal-emp-group-tag" style={{ background: GROUP_COLORS[emp.shift_group]?.bg || '#f5f5f5', color: GROUP_COLORS[emp.shift_group]?.text || '#999' }}>
                       {emp.shift_group || '-'}
                     </span>
-                    <span className={`shift-cell shift-${v}`}>{hours.label}</span>
+                    <span className={`shift-cell shift-${v}`}>{empHours.label}</span>
                   </div>
                 );
               })}
@@ -459,6 +431,7 @@ export default function Schedule() {
             {employees.map(emp => {
               const v = getShiftValue(emp.id, selectedDay);
               const ac = emp.area && AREA_COLORS[emp.area];
+              const empH = getWorkHours(dow, emp.turno || 1);
               return (
                 <div key={emp.id} className="cal-quick-row" onClick={() => handleShiftToggle(emp.id, selectedDay)}>
                   <span className="cal-emp-name-short">{getShortName(emp.name)}</span>
@@ -469,7 +442,7 @@ export default function Schedule() {
                     {emp.area ? tArea(emp.area) : t('areaUnassigned')}
                   </span>
                   <span className={`shift-cell ${v ? `shift-${v}` : 'shift-empty'}`}>
-                    {v === '9' ? `9 ${t('fullDay')}` : v === 'R' ? `R ${t('rest')}` : `— ${t('unscheduled')}`}
+                    {v === '9' ? `9 ${empH.label}` : v === 'R' ? `R ${t('rest')}` : `— ${t('unscheduled')}`}
                   </span>
                 </div>
               );

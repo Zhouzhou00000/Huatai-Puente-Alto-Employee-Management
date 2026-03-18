@@ -1,19 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { getEmployees, createEmployee, updateEmployee, deleteEmployee, resetEmployeePassword, getEmployeeFiles, uploadEmployeeFile, deleteFile, getFileUrl } from '../api';
+import { getEmployees, createEmployee, updateEmployee, deleteEmployee, resetEmployeePassword, getEmployeeFiles, uploadEmployeeFile, deleteFile, getFileUrl, getUsers, createUser, updateUser, deleteUser, resetUserPassword, getSettings, updateSetting } from '../api';
 import { useLang } from '../i18n';
 import ConfirmDialog from '../components/ConfirmDialog';
 import useConfirm from '../hooks/useConfirm';
+import DatePicker from '../components/DatePicker';
+import ComboBox from '../components/ComboBox';
 
 const STATUSES = ['有合同-在职', '试用期', '日结/临时', '已离职'];
+const USER_ROLES = ['admin', 'staff', 'manager', 'supervisor', 'viewer'];
 const POSITIONS = ['Vendedor', 'Vendedora', 'Cajera/Reponedor', '管理'];
 const AREAS = ['游乐园', '零售', '化妆品', '保安', '柜台'];
 const ROLES = ['管理员', '主管', '普通员工'];
 const ROLE_LABEL_MAP = { '管理员': 'roleAdmin', '主管': 'roleSupervisor', '普通员工': 'roleStaff' };
+const ROLE_COLORS = { '管理员': '#6c5ce7', '主管': '#0984e3', '普通员工': '#00b894' };
 
 const emptyForm = {
   name: '', rut: '', position: 'Vendedor', contract_status: '有合同-在职',
   has_contract: true, shift_group: '', contract_end_date: '', nationality: 'Chile',
-  daily_wage: 0, area: '', role: '普通员工', notes: ''
+  daily_wage: 0, area: '', role: '普通员工', phone: '', notes: ''
 };
 
 function InternalManagement() {
@@ -29,11 +33,30 @@ function InternalManagement() {
   const [uploadType, setUploadType] = useState('contract');
   const [payslipYear, setPayslipYear] = useState(new Date().getFullYear());
   const [payslipMonth, setPayslipMonth] = useState(new Date().getMonth() + 1);
+  const [users, setUsers] = useState([]);
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [userForm, setUserForm] = useState({ username: '', password: '', name: '', role: 'staff' });
+  const [permEmp, setPermEmp] = useState(null);
+  const [permUser, setPermUser] = useState(null);
+  const [mobileOnly, setMobileOnly] = useState(false);
   const { t, tStatus, tArea } = useLang();
   const { confirmMessage, confirm, handleConfirm, handleCancel } = useConfirm();
 
   const load = () => getEmployees().then(({ data }) => setAllEmployees(data)).catch(console.error);
-  useEffect(() => { load(); }, []);
+  const loadUsers = () => getUsers().then(({ data }) => setUsers(data)).catch(console.error);
+  const loadSettings = () => getSettings().then(({ data }) => setMobileOnly(data.mobile_only === 'true')).catch(console.error);
+  useEffect(() => { load(); loadUsers(); loadSettings(); }, []);
+
+  const toggleMobileOnly = async () => {
+    const newVal = !mobileOnly;
+    setMobileOnly(newVal);
+    try {
+      await updateSetting('mobile_only', String(newVal));
+    } catch (err) {
+      setMobileOnly(!newVal);
+      alert('设置失败: ' + err.message);
+    }
+  };
 
   const loadFiles = (empId) => {
     getEmployeeFiles(empId).then(({ data }) => setEmpFiles(data)).catch(console.error);
@@ -79,10 +102,8 @@ function InternalManagement() {
     }
   };
 
-  // Internal tab = Chinese employees, Employee tab = non-Chinese employees
-  const employees = activeTab === 'internal'
-    ? allEmployees.filter(e => e.nationality === 'China')
-    : allEmployees.filter(e => e.nationality !== 'China');
+  // Employee tab = all store employees
+  const employees = allEmployees;
 
   const setField = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
 
@@ -115,7 +136,6 @@ function InternalManagement() {
   });
 
   const openAdd = () => { setForm(emptyForm); setShowAddModal(true); };
-  const openAddInternal = () => { setForm({ ...emptyForm, nationality: 'China', position: '管理' }); setShowAddModal(true); };
   const handleAdd = async (e) => {
     e.preventDefault();
     try {
@@ -190,6 +210,51 @@ function InternalManagement() {
     }
   };
 
+  const openUserModal = () => {
+    setUserForm({ username: '', password: '', name: '', role: 'staff' });
+    setShowUserModal(true);
+  };
+
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+    try {
+      await createUser(userForm);
+      setShowUserModal(false);
+      loadUsers();
+    } catch (err) {
+      alert(t('userCreateFail') + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const handleDeleteUser = async (user) => {
+    if (!await confirm(t('userDeleteConfirm')(user.name))) return;
+    try {
+      await deleteUser(user.id);
+      loadUsers();
+    } catch (err) {
+      alert(t('userDeleteFail') + err.message);
+    }
+  };
+
+  const handleResetUserPwd = async (user) => {
+    if (!await confirm(t('confirmResetPassword')(user.name))) return;
+    try {
+      await resetUserPassword(user.id);
+      alert(t('resetPasswordSuccess'));
+    } catch (err) {
+      alert(t('resetPasswordFail') + err.message);
+    }
+  };
+
+  const handleToggleUserActive = async (user) => {
+    try {
+      await updateUser(user.id, { ...user, active: !user.active });
+      loadUsers();
+    } catch (err) {
+      alert(t('userUpdateFail') + err.message);
+    }
+  };
+
   const renderFormFields = () => (
     <>
       <div className="form-group">
@@ -257,9 +322,15 @@ function InternalManagement() {
           <input type="number" value={form.daily_wage} onChange={e => setField('daily_wage', parseInt(e.target.value) || 0)} />
         </div>
       </div>
-      <div className="form-group">
-        <label>{t('formExpiry')}</label>
-        <input type="date" value={form.contract_end_date} onChange={e => setField('contract_end_date', e.target.value)} />
+      <div className="form-row">
+        <div className="form-group">
+          <label>{t('formExpiry')}</label>
+          <DatePicker value={form.contract_end_date} onChange={val => setField('contract_end_date', val)} />
+        </div>
+        <div className="form-group">
+          <label>{t('formPhone')}</label>
+          <input value={form.phone || ''} onChange={e => setField('phone', e.target.value)} placeholder="+56 9 1234 5678" />
+        </div>
       </div>
       <div className="form-group">
         <label>{t('formNotes')}</label>
@@ -274,8 +345,6 @@ function InternalManagement() {
       load();
     } catch (err) { alert(t('permissionFail') + err.message); }
   };
-
-  const chineseEmployees = allEmployees.filter(e => e.nationality === 'China');
 
   const statusBadge = (status) => {
     const cls = status === '有合同-在职' ? 'badge-active' : status === '试用期' ? 'badge-trial' : status === '日结/临时' ? 'badge-daily' : 'badge-departed';
@@ -304,65 +373,6 @@ function InternalManagement() {
 
       {activeTab === 'internal' && (
         <>
-          <div className="action-buttons">
-            <button className="action-btn action-btn-add" onClick={openAdd}>
-              <span className="action-btn-icon">+</span>
-              <span className="action-btn-text">
-                <strong>{t('createEmployee')}</strong>
-                <small>{t('createEmployeeSub')}</small>
-              </span>
-            </button>
-            <button className="action-btn action-btn-convert" onClick={() => {
-              const trialEmps = employees.filter(e => e.contract_status === '试用期');
-              if (trialEmps.length === 0) return alert(t('noTrialEmployees'));
-              setActiveTab('employee');
-              setActionFilter('trial');
-            }}>
-              <span className="action-btn-icon">&#8593;</span>
-              <span className="action-btn-text">
-                <strong>{t('trialToFormal')}</strong>
-                <small>{t('trialToFormalSub')(stats.trial)}</small>
-              </span>
-            </button>
-            <button className="action-btn action-btn-depart" onClick={() => { setActiveTab('employee'); setActionFilter('active'); }}>
-              <span className="action-btn-icon">&#10005;</span>
-              <span className="action-btn-text">
-                <strong>{t('handleDeparture')}</strong>
-                <small>{t('handleDepartureSub')}</small>
-              </span>
-            </button>
-            <button className="action-btn action-btn-rehire" onClick={() => { setActiveTab('employee'); setActionFilter('departed'); }}>
-              <span className="action-btn-icon">&#8634;</span>
-              <span className="action-btn-text">
-                <strong>{t('rehire')}</strong>
-                <small>{t('rehireSub')(stats.departed)}</small>
-              </span>
-            </button>
-          </div>
-
-          <div className="stat-cards">
-            <div className="stat-card stat-active">
-              <div className="stat-number">{stats.active}</div>
-              <div className="stat-label">{t('statActive')}</div>
-            </div>
-            <div className="stat-card stat-trial">
-              <div className="stat-number">{stats.trial}</div>
-              <div className="stat-label">{t('statTrial')}</div>
-            </div>
-            <div className="stat-card stat-daily">
-              <div className="stat-number">{stats.daily}</div>
-              <div className="stat-label">{t('statDaily')}</div>
-            </div>
-            <div className="stat-card stat-departed">
-              <div className="stat-number">{stats.departed}</div>
-              <div className="stat-label">{t('statDeparted')}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-number">{stats.total}</div>
-              <div className="stat-label">{t('statTotal')}</div>
-            </div>
-          </div>
-
           {(soonExpiring.length > 0 || expired.length > 0) && (
             <div className="alert-section">
               {expired.length > 0 && (
@@ -380,62 +390,73 @@ function InternalManagement() {
             </div>
           )}
 
-          {/* Chinese employees table with role/permission */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <div className="section-title" style={{ marginBottom: 0 }}>{t('chineseEmployees')} ({chineseEmployees.length})</div>
-            <button className="btn btn-primary btn-small" onClick={openAddInternal}>+ {t('add')}</button>
+          {/* System settings */}
+          <div className="section-title" style={{ marginTop: 32 }}>系统设置</div>
+          <div className="setting-row">
+            <div className="setting-info">
+              <div className="setting-label">📱 仅限手机/平板访问</div>
+              <div className="setting-desc">开启后，普通员工只能通过手机或平板访问系统，管理员不受限制</div>
+            </div>
+            <button
+              className={`setting-toggle ${mobileOnly ? 'on' : ''}`}
+              onClick={toggleMobileOnly}
+            />
+          </div>
+
+          {/* User account management */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, marginTop: 32 }}>
+            <div className="section-title" style={{ marginBottom: 0 }}>{t('userManagement')} ({users.length})</div>
+            <button className="btn btn-primary btn-small" onClick={openUserModal}>+ {t('userCreate')}</button>
           </div>
           <div className="table-container">
             <table>
               <thead>
                 <tr>
-                  <th>{t('colName')}</th>
-                  <th>{t('colPosition2')}</th>
-                  <th>{t('colStatus2')}</th>
-                  <th>{t('group')}</th>
-                  <th>{t('colArea')}</th>
-                  <th>{t('colContractExpiry')}</th>
-                  <th>{t('colRole')}</th>
+                  <th>{t('userUsername')}</th>
+                  <th>{t('userDisplayName')}</th>
+                  <th>{t('userRole')}</th>
+                  <th>{t('userStatus')}</th>
                   <th>{t('colActions')}</th>
                 </tr>
               </thead>
               <tbody>
-                {chineseEmployees.map(emp => (
-                  <tr key={emp.id} className={emp.contract_status === '已离职' ? 'departed' : ''}>
-                    <td><strong>{emp.name}</strong></td>
-                    <td>{emp.position}</td>
-                    <td>{statusBadge(emp.contract_status)}</td>
-                    <td>{emp.shift_group || '-'}</td>
-                    <td>{emp.area ? tArea(emp.area) : '-'}</td>
-                    <td>{emp.contract_end_date ? emp.contract_end_date.split('T')[0] : '-'}</td>
+                {users.map(u => (
+                  <tr key={u.id} className={!u.active ? 'departed' : ''}>
+                    <td><strong>{u.username}</strong></td>
+                    <td>{u.name}</td>
                     <td>
-                      <select
-                        value={emp.role || '普通员工'}
-                        onChange={e => handleRoleChange(emp, e.target.value)}
-                        className="role-select"
-                      >
-                        {ROLES.map(r => (
-                          <option key={r} value={r}>{t(ROLE_LABEL_MAP[r])}</option>
-                        ))}
-                      </select>
+                      <span className={`badge ${u.role === 'admin' ? 'badge-active' : 'badge-trial'}`}>
+                        {u.role === 'admin' ? t('userRoleAdmin') : t('userRoleStaff')}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`badge ${u.active ? 'badge-active' : 'badge-departed'}`}>
+                        {u.active ? t('userActive') : t('userInactive')}
+                      </span>
                     </td>
                     <td>
                       <div className="btn-group" style={{ flexWrap: 'wrap' }}>
-                        <button className="btn btn-primary btn-small" onClick={() => openEdit(emp)}>{t('edit')}</button>
-                        <button className="btn btn-warning btn-small" onClick={() => handleResetPassword(emp)}>{t('resetPassword')}</button>
-                        {emp.contract_status !== '已离职' && (
-                          <button className="btn btn-danger btn-small" onClick={() => handleDepart(emp)}>{t('depart')}</button>
-                        )}
+                        <button className="btn btn-warning btn-small" onClick={() => handleResetUserPwd(u)}>{t('resetPassword')}</button>
+                        <button className="btn btn-small" onClick={() => handleToggleUserActive(u)}>
+                          {u.active ? t('userInactive') : t('userActive')}
+                        </button>
+                        <button className="btn btn-danger btn-small" onClick={() => handleDeleteUser(u)}>{t('delete')}</button>
+                        <button
+                          className="btn btn-small"
+                          style={{ background: u.role === 'admin' ? '#6c5ce7' : '#00b894', color: '#fff' }}
+                          onClick={() => setPermUser(u)}
+                        >权限</button>
                       </div>
                     </td>
                   </tr>
                 ))}
-                {chineseEmployees.length === 0 && (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: 24, color: '#999' }}>{t('noData')}</td></tr>
+                {users.length === 0 && (
+                  <tr><td colSpan={5} style={{ textAlign: 'center', padding: 24, color: '#999' }}>{t('noData')}</td></tr>
                 )}
               </tbody>
             </table>
           </div>
+
         </>
       )}
 
@@ -491,6 +512,11 @@ function InternalManagement() {
                             <button className="btn btn-danger btn-small" onClick={() => handleDelete(emp)}>{t('delete')}</button>
                           </>
                         )}
+                        <button
+                          className="btn btn-small"
+                          style={{ background: ROLE_COLORS[emp.role || '普通员工'], color: '#fff', borderColor: ROLE_COLORS[emp.role || '普通员工'] }}
+                          onClick={() => setPermEmp(emp)}
+                        >权限</button>
                       </div>
                     </td>
                   </tr>
@@ -519,6 +545,115 @@ function InternalManagement() {
         </div>
       )}
 
+      {showUserModal && (
+        <div className="modal-overlay" onClick={() => setShowUserModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2>{t('userCreate')}</h2>
+            <form onSubmit={handleCreateUser}>
+              <div className="form-group">
+                <label>{t('userUsername')} *</label>
+                <input required value={userForm.username} onChange={e => setUserForm(prev => ({ ...prev, username: e.target.value }))} placeholder="ejemplo: juanperez" />
+              </div>
+              <div className="form-group">
+                <label>{t('userDisplayName')} *</label>
+                <input required value={userForm.name} onChange={e => setUserForm(prev => ({ ...prev, name: e.target.value }))} />
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>{t('userPassword')}</label>
+                  <input value={userForm.password} onChange={e => setUserForm(prev => ({ ...prev, password: e.target.value }))} placeholder={t('userPasswordHint')} />
+                </div>
+                <div className="form-group">
+                  <label>{t('userRole')}</label>
+                  <ComboBox
+                    value={userForm.role}
+                    onChange={val => setUserForm(prev => ({ ...prev, role: val }))}
+                    options={USER_ROLES}
+                    placeholder="admin / staff / ..."
+                  />
+                </div>
+              </div>
+              <div className="form-actions">
+                <button type="button" className="btn" onClick={() => setShowUserModal(false)}>{t('cancel')}</button>
+                <button type="submit" className="btn btn-success">{t('create')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {permEmp && (
+        <div className="modal-overlay" onClick={() => setPermEmp(null)}>
+          <div className="modal" style={{ width: 360 }} onClick={e => e.stopPropagation()}>
+            <h2>权限设置 - {permEmp.name}</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '16px 0' }}>
+              {ROLES.map(r => (
+                <button
+                  key={r}
+                  className="btn btn-small"
+                  style={{
+                    background: (permEmp.role || '普通员工') === r ? ROLE_COLORS[r] : '#f5f5f5',
+                    color: (permEmp.role || '普通员工') === r ? '#fff' : '#333',
+                    border: `2px solid ${ROLE_COLORS[r]}`,
+                    padding: '12px 16px',
+                    fontSize: 14,
+                    fontWeight: 600,
+                  }}
+                  onClick={async () => {
+                    try {
+                      await updateEmployee(permEmp.id, { ...permEmp, role: r });
+                      load();
+                      setPermEmp(null);
+                    } catch (err) { alert('权限更新失败: ' + err.message); }
+                  }}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+            <div className="form-actions">
+              <button className="btn" onClick={() => setPermEmp(null)}>{t('cancel')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {permUser && (
+        <div className="modal-overlay" onClick={() => setPermUser(null)}>
+          <div className="modal" style={{ width: 360 }} onClick={e => e.stopPropagation()}>
+            <h2>权限设置 - {permUser.name}</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '16px 0' }}>
+              {USER_ROLES.map(r => (
+                <button
+                  key={r}
+                  className="btn btn-small"
+                  style={{
+                    background: permUser.role === r ? '#6c5ce7' : '#f5f5f5',
+                    color: permUser.role === r ? '#fff' : '#333',
+                    border: '2px solid #6c5ce7',
+                    padding: '12px 16px',
+                    fontSize: 14,
+                    fontWeight: 600,
+                  }}
+                  onClick={async () => {
+                    try {
+                      await updateUser(permUser.id, { ...permUser, role: r });
+                      loadUsers();
+                      setPermUser(null);
+                    } catch (err) { alert('权限更新失败: ' + err.message); }
+                  }}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+            <div className="form-actions">
+              <button className="btn" onClick={() => setPermUser(null)}>{t('cancel')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ConfirmDialog message={confirmMessage} onConfirm={handleConfirm} onCancel={handleCancel} />
 
       {showEditModal && (
@@ -539,11 +674,18 @@ function InternalManagement() {
               <h3>{t('fileDocuments')}</h3>
 
               <div className="file-upload-bar">
-                <select value={uploadType} onChange={e => setUploadType(e.target.value)} className="file-type-select">
-                  <option value="contract">{t('fileContract')}</option>
-                  <option value="photo">{t('filePhoto')}</option>
-                  <option value="payslip">{t('filePayslip')}</option>
-                </select>
+                <div className="file-type-tabs">
+                  {['contract', 'photo', 'payslip'].map(ft => (
+                    <button
+                      key={ft}
+                      type="button"
+                      className={`file-type-tab ${uploadType === ft ? 'active' : ''}`}
+                      onClick={() => setUploadType(ft)}
+                    >
+                      {ft === 'contract' ? t('fileContract') : ft === 'photo' ? t('filePhoto') : t('filePayslip')}
+                    </button>
+                  ))}
+                </div>
                 {uploadType === 'payslip' && (
                   <div className="payslip-date-picker">
                     <select value={payslipYear} onChange={e => setPayslipYear(Number(e.target.value))}>

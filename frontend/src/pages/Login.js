@@ -1,12 +1,6 @@
 import React, { useState } from 'react';
+import { loginUser } from '../api';
 import { useLang } from '../i18n';
-
-const USERS = [
-  { username: 'admin', password: 'huatai2026', name: '管理员', role: 'admin' },
-  { username: 'xingting', password: '123456', name: '李兴婷', role: 'admin' },
-  { username: 'zhengmiao', password: '123456', name: '郑淼', role: 'admin' },
-  { username: 'juancarlos', password: '1234', name: 'Juan Carlos', role: 'staff' },
-];
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState('');
@@ -15,20 +9,19 @@ export default function Login({ onLogin }) {
   const [loading, setLoading] = useState(false);
   const { t, toggleLang, lang } = useLang();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    setTimeout(() => {
-      const user = USERS.find(u => u.username === username && u.password === password);
-      if (user) {
-        onLogin({ name: user.name, role: user.role, username: user.username });
-      } else {
-        setError(t('loginError'));
-      }
+    try {
+      const { data } = await loginUser(username, password);
+      onLogin({ name: data.name, role: data.role, username: data.username });
+    } catch (err) {
+      setError(t('loginError'));
+    } finally {
       setLoading(false);
-    }, 300);
+    }
   };
 
   return (
@@ -72,9 +65,20 @@ export default function Login({ onLogin }) {
         </form>
 
         <div className="login-footer">
-          <button className="lang-toggle" onClick={toggleLang} style={{ marginBottom: 8 }}>
-            {lang === 'zh' ? 'Español' : '中文'}
-          </button>
+          <div className="lang-toggle-pill">
+            <button
+              className={`lang-pill-btn${lang === 'zh' ? ' active' : ''}`}
+              onClick={() => lang !== 'zh' && toggleLang()}
+            >
+              中文
+            </button>
+            <button
+              className={`lang-pill-btn${lang === 'es' ? ' active' : ''}`}
+              onClick={() => lang !== 'es' && toggleLang()}
+            >
+              Español
+            </button>
+          </div>
           <div>{t('loginFooter')}</div>
         </div>
       </div>
