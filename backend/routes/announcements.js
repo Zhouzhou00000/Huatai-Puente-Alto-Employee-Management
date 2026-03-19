@@ -16,12 +16,12 @@ router.get('/', async (req, res) => {
 
 // 新增公告
 router.post('/', async (req, res) => {
-  const { title, content, priority, pinned } = req.body;
+  const { title, content, priority, pinned, title_es, content_es } = req.body;
   try {
     const { rows } = await db.query(
-      `INSERT INTO announcements (title, content, priority, pinned)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [title, content, priority || 'normal', pinned || false]
+      `INSERT INTO announcements (title, content, priority, pinned, title_es, content_es)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [title, content, priority || 'normal', pinned || false, title_es || '', content_es || '']
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -31,12 +31,12 @@ router.post('/', async (req, res) => {
 
 // 更新公告
 router.put('/:id', async (req, res) => {
-  const { title, content, priority, pinned } = req.body;
+  const { title, content, priority, pinned, title_es, content_es } = req.body;
   try {
     const { rows } = await db.query(
-      `UPDATE announcements SET title=$1, content=$2, priority=$3, pinned=$4, updated_at=NOW()
-       WHERE id=$5 RETURNING *`,
-      [title, content, priority, pinned, req.params.id]
+      `UPDATE announcements SET title=$1, content=$2, priority=$3, pinned=$4, title_es=$5, content_es=$6, updated_at=NOW()
+       WHERE id=$7 RETURNING *`,
+      [title, content, priority, pinned, title_es || '', content_es || '', req.params.id]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
     res.json(rows[0]);

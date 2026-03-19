@@ -40,9 +40,38 @@ function DeviceBlockedScreen({ onLogout }) {
   );
 }
 
-function MobileNav({ isAdmin, t, toggleLang, lang, user, onLogout }) {
+// All nav items with permission keys
+const NAV_ITEMS = [
+  { key: 'home', path: '/home', labelKey: 'navHome', adminOnly: false },
+  { key: 'employees', path: '/employees', labelKey: 'navEmployees', adminOnly: true },
+  { key: 'schedule', path: '/schedule', labelKey: 'navSchedule', adminOnly: false },
+  { key: 'announcements', path: '/announcements', labelKey: 'navAnnouncements', adminOnly: false },
+  { key: 'attendance', path: '/attendance', labelKey: 'navAttendance', adminOnly: false },
+  { key: 'whatsapp', path: '/whatsapp', labelKey: 'navWhatsApp', adminOnly: true },
+  { key: 'internal', path: '/internal', labelKey: 'navInternal', adminOnly: true },
+];
+
+// Check if user has permission for a nav item
+function hasNavPerm(user, navKey) {
+  if (user.role === 'admin') return true;
+  const item = NAV_ITEMS.find(n => n.key === navKey);
+  // If user has permissions set, use them
+  if (user.permissions) {
+    const perms = user.permissions.split(',').map(s => s.trim()).filter(Boolean);
+    return perms.includes(navKey);
+  }
+  // Default: show non-admin-only items
+  return item && !item.adminOnly;
+}
+
+function getVisibleNavItems(user) {
+  return NAV_ITEMS.filter(item => hasNavPerm(user, item.key));
+}
+
+function MobileNav({ t, toggleLang, lang, user, onLogout }) {
   const [open, setOpen] = useState(false);
   const location = useLocation();
+  const visibleItems = getVisibleNavItems(user);
 
   // Close menu on route change
   useEffect(() => { setOpen(false); }, [location.pathname]);
@@ -70,13 +99,11 @@ function MobileNav({ isAdmin, t, toggleLang, lang, user, onLogout }) {
           </NavLink>
         </div>
         <nav className="mobile-drawer-nav">
-          <NavLink to="/home" className="mobile-nav-link" onClick={() => setOpen(false)}>{t('navHome')}</NavLink>
-          {isAdmin && <NavLink to="/employees" className="mobile-nav-link" onClick={() => setOpen(false)}>{t('navEmployees')}</NavLink>}
-          <NavLink to="/schedule" className="mobile-nav-link" onClick={() => setOpen(false)}>{t('navSchedule')}</NavLink>
-          <NavLink to="/announcements" className="mobile-nav-link" onClick={() => setOpen(false)}>{t('navAnnouncements')}</NavLink>
-          <NavLink to="/attendance" className="mobile-nav-link" onClick={() => setOpen(false)}>{t('navAttendance')}</NavLink>
-          {isAdmin && <NavLink to="/whatsapp" className="mobile-nav-link" onClick={() => setOpen(false)}>{t('navWhatsApp')}</NavLink>}
-          {isAdmin && <NavLink to="/internal" className="mobile-nav-link" onClick={() => setOpen(false)}>{t('navInternal')}</NavLink>}
+          {visibleItems.map(item => (
+            <NavLink key={item.key} to={item.path} className="mobile-nav-link" onClick={() => setOpen(false)}>
+              {t(item.labelKey)}
+            </NavLink>
+          ))}
         </nav>
         <div className="mobile-drawer-footer">
           <button className="topbar-lang" onClick={toggleLang} style={{ width: '100%', justifyContent: 'center' }}>
@@ -136,6 +163,8 @@ function AppInner() {
     return <DeviceBlockedScreen onLogout={handleLogout} />;
   }
 
+  const can = (key) => hasNavPerm(user, key);
+  const visibleItems = getVisibleNavItems(user);
   const defaultPath = isAdmin ? '/internal' : '/home';
 
   return (
@@ -152,13 +181,9 @@ function AppInner() {
 
           {/* Desktop nav */}
           <nav className="topbar-nav desktop-only">
-            <NavLink to="/home" className="topbar-link">{t('navHome')}</NavLink>
-            {isAdmin && <NavLink to="/employees" className="topbar-link">{t('navEmployees')}</NavLink>}
-            <NavLink to="/schedule" className="topbar-link">{t('navSchedule')}</NavLink>
-            <NavLink to="/announcements" className="topbar-link">{t('navAnnouncements')}</NavLink>
-            <NavLink to="/attendance" className="topbar-link">{t('navAttendance')}</NavLink>
-            {isAdmin && <NavLink to="/whatsapp" className="topbar-link">{t('navWhatsApp')}</NavLink>}
-            {isAdmin && <NavLink to="/internal" className="topbar-link">{t('navInternal')}</NavLink>}
+            {visibleItems.map(item => (
+              <NavLink key={item.key} to={item.path} className="topbar-link">{t(item.labelKey)}</NavLink>
+            ))}
           </nav>
 
           {/* Desktop right */}
@@ -183,7 +208,6 @@ function AppInner() {
 
           {/* Mobile hamburger */}
           <MobileNav
-            isAdmin={isAdmin}
             t={t}
             toggleLang={toggleLang}
             lang={lang}
@@ -195,20 +219,20 @@ function AppInner() {
         <main className="main">
           <Routes>
             <Route path="/" element={<Navigate to={defaultPath} replace />} />
-            <Route path="/home" element={isAdmin ? <Home /> : <StaffHome user={user} />} />
-            <Route path="/schedule" element={<Schedule />} />
-            <Route path="/announcements" element={<Announcements />} />
-            <Route path="/attendance" element={<Attendance user={user} />} />
+            {can('home') && <Route path="/home" element={isAdmin ? <Home /> : <StaffHome user={user} />} />}
+            {can('schedule') && <Route path="/schedule" element={<Schedule user={user} />} />}
+            {can('announcements') && <Route path="/announcements" element={<Announcements user={user} />} />}
+            {can('attendance') && <Route path="/attendance" element={<Attendance user={user} />} />}
             <Route path="/profile" element={<Profile user={user} onUserUpdate={handleUserUpdate} />} />
-            {isAdmin && (
+            {can('employees') && (
               <>
                 <Route path="/employees" element={<EmployeeList />} />
                 <Route path="/employees/new" element={<EmployeeEdit />} />
                 <Route path="/employees/:id/edit" element={<EmployeeEdit />} />
-                <Route path="/internal" element={<InternalManagement />} />
-                <Route path="/whatsapp" element={<WhatsAppPage />} />
               </>
             )}
+            {can('internal') && <Route path="/internal" element={<InternalManagement />} />}
+            {can('whatsapp') && <Route path="/whatsapp" element={<WhatsAppPage />} />}
             <Route path="*" element={<Navigate to={defaultPath} replace />} />
           </Routes>
         </main>

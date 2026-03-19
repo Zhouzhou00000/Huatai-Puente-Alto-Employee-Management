@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getEmployees, getSchedules, updateSchedule, batchUpdateSchedules } from '../api';
+import { getEmployees, getSchedules, getClockMonth, updateSchedule, batchUpdateSchedules } from '../api';
 import { useLang } from '../i18n';
 import ConfirmDialog from '../components/ConfirmDialog';
 import useConfirm from '../hooks/useConfirm';
@@ -70,7 +70,228 @@ const AREA_COLORS = {
   '柜台':   { bg: '#fff3e0', border: '#ff9800', text: '#e65100' },
 };
 
-export default function Schedule() {
+// ========== Staff: personal schedule view ==========
+function StaffSchedule({ user }) {
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [employee, setEmployee] = useState(null);
+  const [scheduleMap, setScheduleMap] = useState({});
+  const [clockMap, setClockMap] = useState({});
+  const { t } = useLang();
+
+  const daysInMonth = getDaysInMonth(year, month);
+
+  useEffect(() => {
+    getEmployees().then(({ data }) => {
+      const me = data.find(e => e.name === user.name);
+      setEmployee(me || null);
+    }).catch(console.error);
+  }, [user.name]);
+
+  useEffect(() => {
+    if (!employee) return;
+    getSchedules(year, month).then(({ data }) => {
+      const map = {};
+      data.filter(s => s.employee_id === employee.id).forEach(s => {
+        const day = new Date(s.work_date).getDate();
+        map[day] = s.shift_value;
+      });
+      setScheduleMap(map);
+    }).catch(console.error);
+
+    // Load clock records for this month (single API call)
+    getClockMonth(year, month, employee.id).then(({ data }) => {
+      const cmap = {};
+      data.forEach(r => {
+        const day = new Date(r.date).getDate();
+        cmap[day] = r;
+      });
+      setClockMap(cmap);
+    }).catch(console.error);
+  }, [employee, year, month]);
+
+  const prevMonth = () => { if (month === 1) { setYear(y => y - 1); setMonth(12); } else setMonth(m => m - 1); };
+  const nextMonth = () => { if (month === 12) { setYear(y => y + 1); setMonth(1); } else setMonth(m => m + 1); };
+  const goToday = () => { setYear(now.getFullYear()); setMonth(now.getMonth() + 1); };
+
+  const lunchSlot = employee?.shift_group ? getLunchSlot(employee.shift_group) : null;
+  const groupColor = employee?.shift_group ? GROUP_COLORS[employee.shift_group] : null;
+
+  // Calendar grid (Monday first)
+  const firstDow = getDayOfWeek(year, month, 1);
+  const startOffset = firstDow === 0 ? 6 : firstDow - 1;
+  const totalCells = Math.ceil((startOffset + daysInMonth) / 7) * 7;
+  const calDays = [];
+  for (let i = 0; i < totalCells; i++) {
+    const d = i - startOffset + 1;
+    calDays.push(d >= 1 && d <= daysInMonth ? d : null);
+  }
+
+  const dayNames = t('dayNames');
+  const isToday = (d) => d && year === now.getFullYear() && month === now.getMonth() + 1 && d === now.getDate();
+
+  // Stats
+  const workDays = Object.values(scheduleMap).filter(v => v === '9').length;
+  const restDays = Object.values(scheduleMap).filter(v => v === 'R').length;
+  const clockedDays = Object.values(clockMap).filter(r => r.clock_in && r.clock_out).length;
+
+  // Total work hours this month
+  const totalHours = Object.values(clockMap).reduce((sum, r) => {
+    if (!r.clock_in || !r.clock_out) return sum;
+    const total = new Date(r.clock_out) - new Date(r.clock_in);
+    let lunch = 0;
+    if (r.lunch_out && r.lunch_in) lunch = new Date(r.lunch_in) - new Date(r.lunch_out);
+    return sum + (total - lunch) / 3600000;
+  }, 0);
+
+  const fmtTime = (ts) => ts ? new Date(ts).toTimeString().slice(0, 5) : null;
+
+  return (
+    <div style={{ maxWidth: 700, margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 800, color: '#1a3a5c', margin: 0 }}>
+          我的排班 / Mi Horario
+        </h2>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="btn btn-primary btn-small" onClick={prevMonth}>&lt;</button>
+          <span style={{ fontWeight: 700, fontSize: 16, minWidth: 100, textAlign: 'center' }}>{year}年{month}月</span>
+          <button className="btn btn-primary btn-small" onClick={nextMonth}>&gt;</button>
+          <button className="btn btn-small" onClick={goToday} style={{ marginLeft: 4 }}>{t('today')}</button>
+        </div>
+      </div>
+
+      {/* Employee info bar */}
+      {employee && (
+        <div style={{
+          display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16, padding: '14px 20px',
+          background: '#fff', borderRadius: 14, boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+        }}>
+          <div style={{ flex: 1, minWidth: 120 }}>
+            <div style={{ fontSize: 12, color: '#999' }}>姓名 / Nombre</div>
+            <div style={{ fontWeight: 700, fontSize: 15, color: '#1a3a5c' }}>{employee.name}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: '#999' }}>区域 / Área</div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>{employee.area || '未分配'}</div>
+          </div>
+          {employee.shift_group && (
+            <div>
+              <div style={{ fontSize: 12, color: '#999' }}>午休组 / Grupo</div>
+              <div style={{
+                display: 'inline-block', padding: '2px 14px', borderRadius: 8, fontWeight: 700, fontSize: 14,
+                background: groupColor?.bg || '#f5f5f5', color: groupColor?.text || '#666',
+                border: `1px solid ${groupColor?.border || '#ddd'}`
+              }}>
+                {employee.shift_group}组
+              </div>
+            </div>
+          )}
+          {lunchSlot && (
+            <div>
+              <div style={{ fontSize: 12, color: '#999' }}>午休时间 / Almuerzo</div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: groupColor?.text || '#666' }}>
+                {lunchSlot.label}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Stats cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+        <div style={{ background: '#fff', borderRadius: 12, padding: '14px 16px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+          <div style={{ fontSize: 24, fontWeight: 800, color: '#6c5ce7' }}>{workDays}</div>
+          <div style={{ fontSize: 12, color: '#999' }}>上班天数</div>
+        </div>
+        <div style={{ background: '#fff', borderRadius: 12, padding: '14px 16px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+          <div style={{ fontSize: 24, fontWeight: 800, color: '#e17055' }}>{restDays}</div>
+          <div style={{ fontSize: 12, color: '#999' }}>休息天数</div>
+        </div>
+        <div style={{ background: '#fff', borderRadius: 12, padding: '14px 16px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+          <div style={{ fontSize: 24, fontWeight: 800, color: '#52c41a' }}>{clockedDays}</div>
+          <div style={{ fontSize: 12, color: '#999' }}>已打卡</div>
+        </div>
+        <div style={{ background: '#fff', borderRadius: 12, padding: '14px 16px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+          <div style={{ fontSize: 24, fontWeight: 800, color: '#1890ff' }}>{totalHours.toFixed(1)}h</div>
+          <div style={{ fontSize: 12, color: '#999' }}>总工时</div>
+        </div>
+      </div>
+
+      {/* Calendar */}
+      <div style={{ background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 8 }}>
+          {dayNames.map((name, i) => (
+            <div key={name} style={{
+              textAlign: 'center', fontSize: 12, fontWeight: 600,
+              color: i >= 5 ? '#e17055' : '#999', padding: '4px 0'
+            }}>{name}</div>
+          ))}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+          {calDays.map((day, idx) => {
+            if (!day) return <div key={idx} />;
+            const shift = scheduleMap[day];
+            const isR = shift === 'R';
+            const is9 = shift === '9';
+            const today = isToday(day);
+            const rec = clockMap[day];
+            const dow = getDayOfWeek(year, month, day);
+            const isWe = dow === 0 || dow === 6;
+            const hours = employee ? getWorkHours(dow, employee.turno || 1) : null;
+
+            return (
+              <div key={idx} style={{
+                borderRadius: 10, padding: '8px 4px', textAlign: 'center',
+                background: today ? '#e8f0fe' : isR ? '#fff0f0' : is9 ? '#f0fff4' : isWe ? '#fafafa' : '#fff',
+                border: today ? '2px solid #1890ff' : '1px solid #f0f0f0',
+                minHeight: 70, position: 'relative',
+              }}>
+                <div style={{
+                  fontSize: 14, fontWeight: today ? 800 : 600,
+                  color: today ? '#1890ff' : isR ? '#e17055' : '#333',
+                  marginBottom: 2,
+                }}>
+                  {day}
+                </div>
+                {is9 && (
+                  <>
+                    <div style={{ fontSize: 9, color: '#52c41a', fontWeight: 700, marginBottom: 1 }}>
+                      {hours?.label || ''}
+                    </div>
+                    {rec?.clock_in && (
+                      <div style={{ fontSize: 9, color: '#1890ff' }}>
+                        {fmtTime(rec.clock_in)}{rec.clock_out ? `–${fmtTime(rec.clock_out)}` : '…'}
+                      </div>
+                    )}
+                  </>
+                )}
+                {isR && (
+                  <div style={{ fontSize: 10, color: '#e17055', fontWeight: 600 }}>休息</div>
+                )}
+                {!shift && (
+                  <div style={{ fontSize: 10, color: '#ddd' }}>—</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 12, fontSize: 12, color: '#999' }}>
+        <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#f0fff4', border: '1px solid #52c41a', marginRight: 4 }} />上班</span>
+        <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#fff0f0', border: '1px solid #e17055', marginRight: 4 }} />休息</span>
+        <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#e8f0fe', border: '1px solid #1890ff', marginRight: 4 }} />今天</span>
+      </div>
+    </div>
+  );
+}
+
+// ========== Admin: full schedule management ==========
+function AdminSchedule({ user }) {
+  const isAdmin = user?.role === 'admin';
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -78,6 +299,7 @@ export default function Schedule() {
   const [scheduleMap, setScheduleMap] = useState({});
   const [selectedDay, setSelectedDay] = useState(null);
   const [autoAssigning, setAutoAssigning] = useState(false);
+  const [unassignedWarning, setUnassignedWarning] = useState(null);
   const { t, tArea } = useLang();
   const { confirmMessage, confirm, handleConfirm, handleCancel } = useConfirm();
 
@@ -91,6 +313,14 @@ export default function Schedule() {
       ]);
       const activeEmps = empRes.data.filter(e => e.contract_status !== '已离职' && e.nationality !== 'China');
       setEmployees(activeEmps);
+
+      // Warn admin about unassigned employees
+      if (isAdmin) {
+        const unassigned = activeEmps.filter(e => !e.area);
+        if (unassigned.length > 0) {
+          setUnassignedWarning(unassigned);
+        }
+      }
 
       const map = {};
       schRes.data.forEach(s => {
@@ -126,14 +356,21 @@ export default function Schedule() {
     setAutoAssigning(true);
     try {
       const schedules = [];
+      const totalEmps = employees.length;
+
+      // Assign each employee a rest-day offset (0-6) distributed evenly
+      // Each week the rest day rotates so employees don't always rest on the same day
+      // This ensures ~(totalEmps/7) employees rest per day, store always has workers
 
       for (let day = 1; day <= daysInMonth; day++) {
         const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const dow = getDayOfWeek(year, month, day);
+        const dow = getDayOfWeek(year, month, day); // 0=Sun, 1=Mon, ..., 6=Sat
+        const weekNum = getISOWeek(year, month, day);
 
-        // All employees: Lun-Sáb trabajo, Domingo libre
-        employees.forEach(emp => {
-          const isRest = dow === 0; // Sunday = rest
+        employees.forEach((emp, idx) => {
+          // Each employee gets a base offset, then rotated by week number
+          const restDow = (idx + weekNum) % 7; // 0-6
+          const isRest = dow === restDow;
           schedules.push({
             employee_id: emp.id,
             work_date: dateStr,
@@ -425,15 +662,15 @@ export default function Schedule() {
         )}
 
         <div className="cal-detail-section">
-          <h4>{t('quickSchedule')}</h4>
-          <p style={{fontSize:11, color:'#888', marginBottom:8}}>{t('quickScheduleHint')}</p>
+          <h4>{isAdmin ? t('quickSchedule') : t('scheduleTitle')}</h4>
+          {isAdmin && <p style={{fontSize:11, color:'#888', marginBottom:8}}>{t('quickScheduleHint')}</p>}
           <div className="cal-quick-schedule">
             {employees.map(emp => {
               const v = getShiftValue(emp.id, selectedDay);
               const ac = emp.area && AREA_COLORS[emp.area];
               const empH = getWorkHours(dow, emp.turno || 1);
               return (
-                <div key={emp.id} className="cal-quick-row" onClick={() => handleShiftToggle(emp.id, selectedDay)}>
+                <div key={emp.id} className="cal-quick-row" onClick={isAdmin ? () => handleShiftToggle(emp.id, selectedDay) : undefined} style={isAdmin ? {} : { cursor: 'default' }}>
                   <span className="cal-emp-name-short">{getShortName(emp.name)}</span>
                   <span className="cal-emp-group-tag" style={{
                     background: ac ? ac.bg : '#f5f5f5',
@@ -455,6 +692,37 @@ export default function Schedule() {
 
   return (
     <div className="cal-page">
+      {/* Warning for unassigned employees */}
+      {unassignedWarning && unassignedWarning.length > 0 && (
+        <div style={{
+          background: '#fff3e0', border: '1px solid #ffb74d', borderRadius: 10,
+          padding: '14px 20px', marginBottom: 16, display: 'flex', alignItems: 'flex-start', gap: 12
+        }}>
+          <span style={{ fontSize: 20, lineHeight: 1 }}>⚠️</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, color: '#e65100', fontSize: 14, marginBottom: 6 }}>
+              {unassignedWarning.length} 名员工未分配区域 / {unassignedWarning.length} empleados sin área asignada
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {unassignedWarning.map(emp => (
+                <span key={emp.id} style={{
+                  padding: '3px 10px', background: '#fff', borderRadius: 6,
+                  fontSize: 12, color: '#e65100', border: '1px solid #ffcc80'
+                }}>
+                  {emp.name}
+                </span>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: '#bf360c', marginTop: 6 }}>
+              请到员工信息页面分配工作区域 / Asignar área en la página de empleados
+            </div>
+          </div>
+          <button onClick={() => setUnassignedWarning(null)} style={{
+            background: 'none', border: 'none', fontSize: 18, cursor: 'pointer',
+            color: '#bf360c', padding: '0 4px', lineHeight: 1
+          }}>×</button>
+        </div>
+      )}
       <div className="cal-header">
         <div className="cal-nav">
           <h2>{year} - {month}</h2>
@@ -463,18 +731,20 @@ export default function Schedule() {
             <button className="btn btn-primary btn-small" onClick={goToday}>{t('today')}</button>
             <button className="btn btn-primary btn-small" onClick={nextMonth}>&gt;</button>
           </div>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-            <button
-              className="btn btn-success"
-              onClick={handleAutoAssign}
-              disabled={autoAssigning || employees.length === 0}
-            >
-              {autoAssigning ? t('assigning') : t('autoAssign')}
-            </button>
-            <button className="btn btn-primary" onClick={handlePrint}>
-              {t('printSchedule')}
-            </button>
-          </div>
+          {isAdmin && (
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+              <button
+                className="btn btn-success"
+                onClick={handleAutoAssign}
+                disabled={autoAssigning || employees.length === 0}
+              >
+                {autoAssigning ? t('assigning') : t('autoAssign')}
+              </button>
+              <button className="btn btn-primary" onClick={handlePrint}>
+                {t('printSchedule')}
+              </button>
+            </div>
+          )}
         </div>
         {renderLunchLegend()}
       </div>
@@ -526,4 +796,10 @@ export default function Schedule() {
       <ConfirmDialog message={confirmMessage} onConfirm={handleConfirm} onCancel={handleCancel} />
     </div>
   );
+}
+
+// ========== Entry: route by role ==========
+export default function Schedule({ user }) {
+  const isAdmin = user?.role === 'admin';
+  return isAdmin ? <AdminSchedule user={user} /> : <StaffSchedule user={user} />;
 }

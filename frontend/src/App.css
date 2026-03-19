@@ -772,6 +772,74 @@ tr.departed {
   border-color: #6c5ce7;
 }
 
+/* ===== Announcement Filters ===== */
+.ann-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.ann-filter-tabs {
+  display: flex;
+  gap: 4px;
+  background: #f0f2f5;
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.ann-filter-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #888;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.ann-filter-tab.active {
+  background: white;
+  color: #1a1a2e;
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.ann-filter-count {
+  font-size: 11px;
+  background: #e8e8e8;
+  color: #666;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.ann-filter-tab.active .ann-filter-count {
+  background: #6c5ce7;
+  color: white;
+}
+
+.ann-filter-search {
+  padding: 8px 14px;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 10px;
+  font-size: 13px;
+  outline: none;
+  width: 180px;
+  transition: border-color 0.2s;
+}
+
+.ann-filter-search:focus {
+  border-color: #6c5ce7;
+}
+
 /* ===== Announcements ===== */
 .announcement-list {
   display: flex;
@@ -1719,17 +1787,146 @@ tr.departed {
   background: white;
 }
 
-.payslip-date-picker {
-  display: flex;
-  gap: 4px;
+/* ===== Payslip Month Picker ===== */
+.pmp-wrap {
+  position: relative;
 }
 
-.payslip-date-picker select {
-  padding: 6px 8px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 13px;
+.pmp-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 10px;
   background: white;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  transition: all 0.15s;
+}
+
+.pmp-trigger:hover {
+  border-color: #6c5ce7;
+}
+
+.pmp-trigger-icon {
+  font-size: 16px;
+}
+
+.pmp-trigger-text {
+  min-width: 72px;
+}
+
+.pmp-trigger-arrow {
+  font-size: 9px;
+  color: #999;
+}
+
+.pmp-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+.pmp-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 100;
+  background: white;
+  border-radius: 14px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+  border: 1.5px solid #eee;
+  padding: 16px;
+  width: 260px;
+  animation: pmp-in 0.15s ease;
+}
+
+@keyframes pmp-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.pmp-year-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.pmp-year-label {
+  font-size: 16px;
+  font-weight: 800;
+  color: #1a1a2e;
+}
+
+.pmp-year-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1.5px solid #e8e8e8;
+  background: #fafafa;
+  font-size: 16px;
+  cursor: pointer;
+  color: #555;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.pmp-year-btn:hover:not(:disabled) {
+  border-color: #6c5ce7;
+  color: #6c5ce7;
+  background: #f0f0ff;
+}
+
+.pmp-year-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.pmp-month-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.pmp-month-cell {
+  padding: 10px 4px;
+  border: 1.5px solid #f0f0f0;
+  border-radius: 10px;
+  background: #fafafa;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+
+.pmp-month-cell:hover:not(:disabled) {
+  border-color: #6c5ce7;
+  background: #f0f0ff;
+  color: #6c5ce7;
+}
+
+.pmp-month-cell.selected {
+  background: #6c5ce7;
+  color: white;
+  border-color: #6c5ce7;
+}
+
+.pmp-month-cell.current:not(.selected) {
+  border-color: #6c5ce7;
+  color: #6c5ce7;
+}
+
+.pmp-month-cell.future {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 .file-upload-btn {
@@ -2446,7 +2643,7 @@ tr.departed {
 
 .staff-clock-btn {
   width: 100%;
-  padding: 20px 16px;
+  padding: 14px 12px;
   border-radius: 16px;
   border: 2px solid rgba(255,255,255,0.15);
   background: rgba(255,255,255,0.08);
@@ -2456,7 +2653,7 @@ tr.departed {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .staff-clock-btn.active-in {
@@ -3127,6 +3324,38 @@ tr.departed {
   color: #bbb;
 }
 
+.admin-att-status-rest {
+  background: #fff3e0;
+  color: #e17055;
+}
+
+.admin-att-row-rest {
+  background: #fffaf5;
+}
+
+.admin-att-shift-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-att-shift-badge.work {
+  background: #e6f7ff;
+  color: #1890ff;
+}
+
+.admin-att-shift-badge.rest {
+  background: #fff3e0;
+  color: #e17055;
+}
+
+.admin-att-shift-badge.none {
+  background: #f5f5f5;
+  color: #bbb;
+}
+
 .admin-att-actions {
   display: flex;
   gap: 6px;
@@ -3167,11 +3396,134 @@ tr.departed {
   cursor: not-allowed;
 }
 
+.admin-att-action-btn.edit {
+  background: #f0f0f0;
+  color: #666;
+}
+
+.admin-att-action-btn.edit:hover {
+  background: #6c5ce7;
+  color: white;
+}
+
 .admin-att-action-done {
   color: #52c41a;
   font-size: 16px;
   font-weight: 700;
   padding: 0 8px;
+}
+
+/* Edit modal */
+.att-edit-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.att-edit-modal {
+  background: white;
+  border-radius: 16px;
+  padding: 28px 32px;
+  width: 380px;
+  max-width: 90vw;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+}
+
+.att-edit-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.att-edit-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.att-edit-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #555;
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.att-edit-field input[type="time"] {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.att-edit-field input[type="time"]:focus {
+  border-color: #6c5ce7;
+}
+
+.att-edit-clear {
+  background: none;
+  border: none;
+  color: #ff4d4f;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.att-edit-clear:hover {
+  background: #fff1f0;
+}
+
+.att-edit-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.att-edit-cancel {
+  padding: 8px 20px;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 8px;
+  background: white;
+  color: #666;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.att-edit-cancel:hover {
+  background: #f5f5f5;
+}
+
+.att-edit-save {
+  padding: 8px 28px;
+  border: none;
+  border-radius: 8px;
+  background: #6c5ce7;
+  color: white;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.att-edit-save:hover {
+  background: #5a4bd1;
+}
+
+.att-edit-save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .admin-att-empty-state {
@@ -3951,6 +4303,20 @@ tr.departed {
 
   .gt-options {
     flex-wrap: wrap;
+  }
+
+  /* Announcement filters */
+  .ann-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ann-filter-tabs {
+    overflow-x: auto;
+  }
+
+  .ann-filter-search {
+    width: 100%;
   }
 
   /* Alerts */

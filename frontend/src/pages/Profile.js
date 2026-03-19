@@ -42,7 +42,7 @@ export default function Profile({ user, onUserUpdate }) {
 
   const handleSave = async () => {
     if (!user.id) {
-      showMsg('无法保存：用户ID缺失', 'error');
+      showMsg('无法保存：用户ID缺失，请重新登录', 'error');
       return;
     }
     if (newPassword && newPassword !== confirmPassword) {
@@ -53,6 +53,7 @@ export default function Profile({ user, onUserUpdate }) {
     try {
       const payload = { name };
       if (newPassword) payload.password = newPassword;
+      if (isEmployee) payload.isEmployee = true;
       const { data } = await updateProfile(user.id, payload);
       onUserUpdate({ ...user, name: data.name });
       setNewPassword('');
@@ -120,7 +121,7 @@ export default function Profile({ user, onUserUpdate }) {
         <div className="profile-info-section">
           <div className="profile-field">
             <label>{t('profileUsername')}</label>
-            <input type="text" value={user.username || ''} disabled className="profile-input disabled" />
+            <input type="text" value={user.username || user.name || ''} disabled className="profile-input disabled" />
           </div>
 
           <div className="profile-field">
@@ -130,7 +131,6 @@ export default function Profile({ user, onUserUpdate }) {
               value={name}
               onChange={e => setName(e.target.value)}
               className="profile-input"
-              disabled={isEmployee}
             />
           </div>
 
@@ -139,38 +139,34 @@ export default function Profile({ user, onUserUpdate }) {
             <input type="text" value={roleLabel} disabled className="profile-input disabled" />
           </div>
 
-          {!isEmployee && (
-            <>
-              <div className="profile-divider" />
-              <h3 className="profile-section-title">{t('profilePassword')}</h3>
+          <div className="profile-divider" />
+          <h3 className="profile-section-title">{t('profilePassword')}</h3>
 
-              <div className="profile-field">
-                <label>{t('profileNewPassword')}</label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={e => setNewPassword(e.target.value)}
-                  className="profile-input"
-                  placeholder="••••••"
-                />
-              </div>
+          <div className="profile-field">
+            <label>{t('profileNewPassword')}</label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={e => setNewPassword(e.target.value)}
+              className="profile-input"
+              placeholder="••••••"
+            />
+          </div>
 
-              <div className="profile-field">
-                <label>{t('profileConfirmPassword')}</label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  className="profile-input"
-                  placeholder="••••••"
-                />
-              </div>
+          <div className="profile-field">
+            <label>{t('profileConfirmPassword')}</label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+              className="profile-input"
+              placeholder="••••••"
+            />
+          </div>
 
-              <button className="profile-save-btn" onClick={handleSave} disabled={saving}>
-                {saving ? '...' : t('save')}
-              </button>
-            </>
-          )}
+          <button className="profile-save-btn" onClick={handleSave} disabled={saving}>
+            {saving ? '...' : t('save')}
+          </button>
         </div>
       </div>
     </div>

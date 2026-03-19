@@ -42,6 +42,10 @@ export const getClockRecords = (date) => API.get(`/clock?date=${date}`);
 export const getEmployeeClockRecord = (employeeId, date) => API.get(`/clock/employee/${employeeId}?date=${date}`);
 export const clockIn = (employee_id) => API.post('/clock/in', { employee_id });
 export const clockOut = (employee_id) => API.post('/clock/out', { employee_id });
+export const clockLunchOut = (employee_id) => API.post('/clock/lunch-out', { employee_id });
+export const clockLunchIn = (employee_id) => API.post('/clock/lunch-in', { employee_id });
+export const getClockMonth = (year, month, employee_id) => API.get(`/clock/month?year=${year}&month=${month}${employee_id ? `&employee_id=${employee_id}` : ''}`);
+export const editClockRecord = (data) => API.put('/clock/edit', data);
 
 // 考勤 API
 export const getAttendance = (date) => API.get(`/attendance?date=${date}`);

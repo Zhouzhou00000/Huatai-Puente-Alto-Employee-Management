@@ -4,18 +4,20 @@ import { useLang } from '../i18n';
 import ConfirmDialog from '../components/ConfirmDialog';
 import useConfirm from '../hooks/useConfirm';
 
-function Announcements() {
+function Announcements({ user }) {
   const [list, setList] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [showTranslateModal, setShowTranslateModal] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ title: '', content: '', priority: 'normal', pinned: false });
+  const [form, setForm] = useState({ title: '', content: '', title_es: '', content_es: '', priority: 'normal', pinned: false });
   const [zhTitle, setZhTitle] = useState('');
   const [zhContent, setZhContent] = useState('');
   const [esTitle, setEsTitle] = useState('');
   const [esContent, setEsContent] = useState('');
   const [translating, setTranslating] = useState(false);
   const [transForm, setTransForm] = useState({ priority: 'normal', pinned: false });
+  const [filterPriority, setFilterPriority] = useState('all');
+  const [search, setSearch] = useState('');
   const { t } = useLang();
   const { confirmMessage, confirm, handleConfirm, handleCancel } = useConfirm();
   const titleTimer = useRef(null);
@@ -68,7 +70,7 @@ function Announcements() {
 
   const openNew = () => {
     setEditing(null);
-    setForm({ title: '', content: '', priority: 'normal', pinned: false });
+    setForm({ title: '', content: '', title_es: '', content_es: '', priority: 'normal', pinned: false });
     setShowModal(true);
   };
 
@@ -83,7 +85,7 @@ function Announcements() {
 
   const openEdit = (item) => {
     setEditing(item);
-    setForm({ title: item.title, content: item.content, priority: item.priority, pinned: item.pinned });
+    setForm({ title: item.title, content: item.content, title_es: item.title_es || '', content_es: item.content_es || '', priority: item.priority, pinned: item.pinned });
     setShowModal(true);
   };
 
@@ -104,13 +106,12 @@ function Announcements() {
 
   const handleTranslatePublish = async () => {
     if (!zhTitle.trim() && !esTitle.trim()) return;
-    // Combine Chinese + Spanish into one announcement
-    const title = esTitle.trim() ? `${zhTitle}\n${esTitle}` : zhTitle;
-    const content = esContent.trim() ? `${zhContent}\n\n---\n\n${esContent}` : zhContent;
     try {
       await createAnnouncement({
-        title: title,
-        content: content,
+        title: zhTitle,
+        content: zhContent,
+        title_es: esTitle,
+        content_es: esContent,
         priority: transForm.priority,
         pinned: transForm.pinned,
       });
@@ -156,38 +157,102 @@ function Announcements() {
     <div>
       <div className="toolbar">
         <h2 className="section-title" style={{ margin: 0 }}>{t('announcementsTitle')}</h2>
-        <div className="btn-group">
-          <button className="btn btn-primary" onClick={openNew}>{t('publishAnnouncement')}</button>
-          <button className="btn btn-success" onClick={openTranslate}>翻译发布</button>
-        </div>
-      </div>
-
-      {list.length === 0 && <p style={{ color: '#999', textAlign: 'center', padding: 40 }}>{t('noAnnouncements')}</p>}
-
-      <div className="announcement-list">
-        {list.map(item => (
-          <div key={item.id} className={`announcement-card ${item.pinned ? 'pinned' : ''}`}>
-            <div className="announcement-header">
-              <div className="announcement-title-row">
-                {item.pinned && <span className="pin-badge">{t('pinned')}</span>}
-                <span className={`badge ${PRIORITY_MAP[item.priority]?.className || 'badge-active'}`}>
-                  {PRIORITY_MAP[item.priority]?.label || item.priority}
-                </span>
-                <h3 className="announcement-title">{item.title}</h3>
-              </div>
-              <div className="btn-group">
-                <button className="btn btn-small btn-primary" onClick={() => openEdit(item)}>{t('edit')}</button>
-                <button className="btn btn-small btn-danger" onClick={() => handleDelete(item.id)}>{t('delete')}</button>
-              </div>
-            </div>
-            <p className="announcement-content">{item.content}</p>
-            <div className="announcement-meta">
-              {formatDate(item.created_at)}
-              {item.updated_at !== item.created_at && ` (${t('edited')})`}
-            </div>
+        {user?.role === 'admin' && (
+          <div className="btn-group">
+            <button className="btn btn-primary" onClick={openNew}>{t('publishAnnouncement')}</button>
+            <button className="btn btn-success" onClick={openTranslate}>翻译发布</button>
           </div>
-        ))}
+        )}
       </div>
+
+      {/* Filters */}
+      <div className="ann-filter-bar">
+        <div className="ann-filter-tabs">
+          {[
+            { key: 'all', label: t('all') },
+            { key: 'urgent', label: t('priorityUrgent') },
+            { key: 'normal', label: t('priorityNormal') },
+            { key: 'low', label: t('priorityLow') },
+            { key: 'pinned', label: t('pinned') },
+          ].map(f => (
+            <button
+              key={f.key}
+              className={`ann-filter-tab ${filterPriority === f.key ? 'active' : ''}`}
+              onClick={() => setFilterPriority(f.key)}
+            >
+              {f.label}
+              <span className="ann-filter-count">
+                {f.key === 'all' ? list.length
+                  : f.key === 'pinned' ? list.filter(i => i.pinned).length
+                  : list.filter(i => i.priority === f.key).length}
+              </span>
+            </button>
+          ))}
+        </div>
+        <input
+          className="ann-filter-search"
+          placeholder={t('search')}
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+      </div>
+
+      {(() => {
+        const isAdmin = user?.role === 'admin';
+        const filtered = list.filter(item => {
+          if (filterPriority === 'pinned' && !item.pinned) return false;
+          if (filterPriority !== 'all' && filterPriority !== 'pinned' && item.priority !== filterPriority) return false;
+          if (search) {
+            const q = search.toLowerCase();
+            const title = (isAdmin ? item.title : (item.title_es || item.title)) || '';
+            const content = (isAdmin ? item.content : (item.content_es || item.content)) || '';
+            if (!title.toLowerCase().includes(q) && !content.toLowerCase().includes(q)) return false;
+          }
+          return true;
+        });
+
+        if (filtered.length === 0) return <p style={{ color: '#999', textAlign: 'center', padding: 40 }}>{t('noAnnouncements')}</p>;
+
+        return (
+      <div className="announcement-list">
+        {filtered.map(item => {
+          // Staff sees Spanish if available, otherwise Chinese
+          const displayTitle = (!isAdmin && item.title_es) ? item.title_es : item.title;
+          const displayContent = (!isAdmin && item.content_es) ? item.content_es : item.content;
+
+          return (
+            <div key={item.id} className={`announcement-card ${item.pinned ? 'pinned' : ''}`}>
+              <div className="announcement-header">
+                <div className="announcement-title-row">
+                  {item.pinned && <span className="pin-badge">{t('pinned')}</span>}
+                  <span className={`badge ${PRIORITY_MAP[item.priority]?.className || 'badge-active'}`}>
+                    {PRIORITY_MAP[item.priority]?.label || item.priority}
+                  </span>
+                  <h3 className="announcement-title">{displayTitle}</h3>
+                </div>
+                {isAdmin && (
+                  <div className="btn-group">
+                    <button className="btn btn-small btn-primary" onClick={() => openEdit(item)}>{t('edit')}</button>
+                    <button className="btn btn-small btn-danger" onClick={() => handleDelete(item.id)}>{t('delete')}</button>
+                  </div>
+                )}
+              </div>
+              <p className="announcement-content">{displayContent}</p>
+              {isAdmin && item.title_es && (
+                <div style={{ marginTop: 8, padding: '8px 12px', background: '#f0fdf4', borderRadius: 8, fontSize: 13, color: '#16a34a' }}>
+                  <strong>ES:</strong> {item.title_es} — {item.content_es}
+                </div>
+              )}
+              <div className="announcement-meta">
+                {formatDate(item.created_at)}
+                {item.updated_at !== item.created_at && ` (${t('edited')})`}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+        );
+      })()}
 
       <ConfirmDialog message={confirmMessage} onConfirm={handleConfirm} onCancel={handleCancel} />
 
@@ -196,12 +261,20 @@ function Announcements() {
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h2>{editing ? t('editAnnouncement') : t('newAnnouncement')}</h2>
             <div className="form-group">
-              <label>{t('formTitle')}</label>
+              <label>{t('formTitle')} (中文)</label>
               <input value={form.title} onChange={e => setForm({...form, title: e.target.value})} />
             </div>
             <div className="form-group">
-              <label>{t('formContent')}</label>
-              <textarea rows={5} value={form.content} onChange={e => setForm({...form, content: e.target.value})} />
+              <label>{t('formContent')} (中文)</label>
+              <textarea rows={4} value={form.content} onChange={e => setForm({...form, content: e.target.value})} />
+            </div>
+            <div className="form-group">
+              <label>Título (Español)</label>
+              <input value={form.title_es} onChange={e => setForm({...form, title_es: e.target.value})} placeholder="Título en español..." />
+            </div>
+            <div className="form-group">
+              <label>Contenido (Español)</label>
+              <textarea rows={4} value={form.content_es} onChange={e => setForm({...form, content_es: e.target.value})} placeholder="Contenido en español..." />
             </div>
             <div className="form-row">
               <div className="form-group">

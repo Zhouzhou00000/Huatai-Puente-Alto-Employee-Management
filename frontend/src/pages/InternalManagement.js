@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getEmployees, createEmployee, updateEmployee, deleteEmployee, resetEmployeePassword, getEmployeeFiles, uploadEmployeeFile, deleteFile, getFileUrl, getUsers, createUser, updateUser, deleteUser, resetUserPassword, getSettings, updateSetting } from '../api';
 import { useLang } from '../i18n';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -8,6 +8,7 @@ import ComboBox from '../components/ComboBox';
 
 const STATUSES = ['有合同-在职', '试用期', '日结/临时', '已离职'];
 const USER_ROLES = ['admin', 'staff', 'manager', 'supervisor', 'viewer'];
+const USER_ROLE_LABELS = { admin: '管理员', staff: '员工', manager: '经理', supervisor: '主管', viewer: '查看者' };
 const POSITIONS = ['Vendedor', 'Vendedora', 'Cajera/Reponedor', '管理'];
 const AREAS = ['游乐园', '零售', '化妆品', '保安', '柜台'];
 const ROLES = ['管理员', '主管', '普通员工'];
@@ -19,6 +20,336 @@ const emptyForm = {
   has_contract: true, shift_group: '', contract_end_date: '', nationality: 'Chile',
   daily_wage: 0, area: '', role: '普通员工', phone: '', notes: ''
 };
+
+const MONTH_LABELS = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+
+function PayslipMonthPicker({ year, month, onChangeYear, onChangeMonth }) {
+  const [open, setOpen] = useState(false);
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curMonth = now.getMonth() + 1;
+
+  const years = [];
+  for (let y = curYear - 2; y <= curYear + 1; y++) years.push(y);
+
+  const isFuture = (y, m) => y > curYear || (y === curYear && m > curMonth);
+
+  return (
+    <div className="pmp-wrap">
+      <button className="pmp-trigger" onClick={() => setOpen(o => !o)} type="button">
+        <span className="pmp-trigger-icon">&#128197;</span>
+        <span className="pmp-trigger-text">{year}年 {month}月</span>
+        <span className="pmp-trigger-arrow">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <>
+          <div className="pmp-backdrop" onClick={() => setOpen(false)} />
+          <div className="pmp-dropdown">
+            {/* Year nav */}
+            <div className="pmp-year-row">
+              <button
+                className="pmp-year-btn"
+                onClick={() => onChangeYear(Math.max(years[0], year - 1))}
+                disabled={year <= years[0]}
+                type="button"
+              >‹</button>
+              <span className="pmp-year-label">{year}</span>
+              <button
+                className="pmp-year-btn"
+                onClick={() => onChangeYear(Math.min(years[years.length - 1], year + 1))}
+                disabled={year >= years[years.length - 1]}
+                type="button"
+              >›</button>
+            </div>
+            {/* Month grid */}
+            <div className="pmp-month-grid">
+              {MONTH_LABELS.map((label, i) => {
+                const m = i + 1;
+                const selected = month === m;
+                const future = isFuture(year, m);
+                const isCurrent = year === curYear && m === curMonth;
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    className={`pmp-month-cell ${selected ? 'selected' : ''} ${isCurrent ? 'current' : ''} ${future ? 'future' : ''}`}
+                    disabled={future}
+                    onClick={() => { onChangeMonth(m); setOpen(false); }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+const NAV_PERM_ITEMS = [
+  { key: 'home', label: '首页', labelEs: 'Inicio' },
+  { key: 'employees', label: '员工信息', labelEs: 'Empleados' },
+  { key: 'schedule', label: '排班日历', labelEs: 'Horarios' },
+  { key: 'announcements', label: '公告通知', labelEs: 'Avisos' },
+  { key: 'attendance', label: '打卡', labelEs: 'Asistencia' },
+  { key: 'whatsapp', label: 'WhatsApp', labelEs: 'WhatsApp' },
+  { key: 'internal', label: '内部管理', labelEs: 'Gestión Interna' },
+];
+
+function UserPermModal({ user, t, onClose, onSave }) {
+  const [role, setRole] = useState(user.role);
+  const [perms, setPerms] = useState(() => {
+    if (user.permissions) return user.permissions.split(',').map(s => s.trim()).filter(Boolean);
+    return [];
+  });
+  const isAdminRole = role === 'admin';
+
+  const togglePerm = (key) => {
+    setPerms(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+  };
+
+  const handleSave = () => {
+    onSave({
+      ...user,
+      role,
+      permissions: isAdminRole ? '' : perms.join(','),
+    });
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ width: 440 }} onClick={e => e.stopPropagation()}>
+        <h2>权限设置 - {user.name}</h2>
+
+        {/* Role selection */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontSize: 13, color: '#666', fontWeight: 600, marginBottom: 6, display: 'block' }}>角色</label>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {USER_ROLES.map(r => (
+              <button
+                key={r}
+                className="btn btn-small"
+                style={{
+                  background: role === r ? '#6c5ce7' : '#f5f5f5',
+                  color: role === r ? '#fff' : '#333',
+                  border: `1.5px solid ${role === r ? '#6c5ce7' : '#ddd'}`,
+                  padding: '8px 14px',
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+                onClick={() => setRole(r)}
+              >
+                {USER_ROLE_LABELS[r] || r}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Nav permissions */}
+        <div>
+          <label style={{ fontSize: 13, color: '#666', fontWeight: 600, marginBottom: 8, display: 'block' }}>
+            导航菜单权限
+            {isAdminRole && <span style={{ fontWeight: 400, color: '#999', marginLeft: 8 }}>(管理员拥有全部权限)</span>}
+          </label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {NAV_PERM_ITEMS.map(item => {
+              const checked = isAdminRole || perms.includes(item.key);
+              return (
+                <label
+                  key={item.key}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    background: checked ? '#f0f0ff' : '#fafafa',
+                    border: `1.5px solid ${checked ? '#d0d0ff' : '#f0f0f0'}`,
+                    cursor: isAdminRole ? 'default' : 'pointer',
+                    opacity: isAdminRole ? 0.6 : 1,
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => !isAdminRole && togglePerm(item.key)}
+                    disabled={isAdminRole}
+                    style={{ width: 18, height: 18, accentColor: '#6c5ce7' }}
+                  />
+                  <span style={{ fontWeight: 600, fontSize: 14, color: '#333', flex: 1 }}>{item.label}</span>
+                  <span style={{ fontSize: 12, color: '#999' }}>{item.labelEs}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="form-actions" style={{ marginTop: 20 }}>
+          <button className="btn" onClick={onClose}>{t('cancel')}</button>
+          <button className="btn btn-primary" onClick={handleSave}>{t('save')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Google Maps component for geofence location picker
+function GeoMap({ apiKey, lat, lng, radius, onLocationChange, onNameChange }) {
+  const mapRef = useRef(null);
+  const mapInstance = useRef(null);
+  const markerRef = useRef(null);
+  const circleRef = useRef(null);
+  const searchRef = useRef(null);
+  const [mapReady, setMapReady] = useState(false);
+
+  // Load Google Maps script
+  useEffect(() => {
+    if (!apiKey) return;
+    if (window.google?.maps) { setMapReady(true); return; }
+
+    // Remove any existing script to avoid duplicates
+    const existingScript = document.getElementById('google-maps-script');
+    if (existingScript) existingScript.remove();
+
+    const script = document.createElement('script');
+    script.id = 'google-maps-script';
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&language=es`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => setMapReady(true);
+    script.onerror = () => console.error('Google Maps load failed');
+    document.head.appendChild(script);
+  }, [apiKey]);
+
+  // Initialize map
+  const initMap = useCallback(() => {
+    if (!mapRef.current || !window.google?.maps) return;
+
+    const center = lat && lng ? { lat: parseFloat(lat), lng: parseFloat(lng) } : { lat: -33.6001, lng: -70.5784 };
+    const r = parseInt(radius) || 200;
+
+    const map = new window.google.maps.Map(mapRef.current, {
+      center,
+      zoom: 16,
+      mapTypeControl: true,
+      mapTypeControlOptions: { style: window.google.maps.MapTypeControlStyle.DROPDOWN_MENU },
+      streetViewControl: false,
+      fullscreenControl: true,
+    });
+    mapInstance.current = map;
+
+    // Marker
+    const marker = new window.google.maps.Marker({
+      position: center,
+      map,
+      draggable: true,
+      title: '打卡位置',
+      animation: window.google.maps.Animation.DROP,
+    });
+    markerRef.current = marker;
+
+    // Radius circle
+    const circle = new window.google.maps.Circle({
+      map,
+      center,
+      radius: r,
+      fillColor: '#1890ff',
+      fillOpacity: 0.15,
+      strokeColor: '#1890ff',
+      strokeOpacity: 0.5,
+      strokeWeight: 2,
+    });
+    circleRef.current = circle;
+
+    // Drag marker → update location
+    marker.addListener('dragend', () => {
+      const pos = marker.getPosition();
+      circle.setCenter(pos);
+      onLocationChange(pos.lat().toFixed(7), pos.lng().toFixed(7));
+      // Reverse geocode
+      const geocoder = new window.google.maps.Geocoder();
+      geocoder.geocode({ location: pos }, (results, status) => {
+        if (status === 'OK' && results[0]) {
+          onNameChange(results[0].formatted_address);
+        }
+      });
+    });
+
+    // Click map → move marker
+    map.addListener('click', (e) => {
+      const pos = e.latLng;
+      marker.setPosition(pos);
+      circle.setCenter(pos);
+      onLocationChange(pos.lat().toFixed(7), pos.lng().toFixed(7));
+      const geocoder = new window.google.maps.Geocoder();
+      geocoder.geocode({ location: pos }, (results, status) => {
+        if (status === 'OK' && results[0]) {
+          onNameChange(results[0].formatted_address);
+        }
+      });
+    });
+
+    // Search box (Places Autocomplete)
+    if (searchRef.current) {
+      const autocomplete = new window.google.maps.places.Autocomplete(searchRef.current, {
+        types: ['establishment', 'geocode'],
+        componentRestrictions: { country: 'cl' },
+      });
+      autocomplete.bindTo('bounds', map);
+      autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        if (!place.geometry?.location) return;
+        const pos = place.geometry.location;
+        map.setCenter(pos);
+        map.setZoom(17);
+        marker.setPosition(pos);
+        circle.setCenter(pos);
+        onLocationChange(pos.lat().toFixed(7), pos.lng().toFixed(7));
+        onNameChange(place.formatted_address || place.name || '');
+      });
+    }
+  }, [lat, lng, radius, onLocationChange, onNameChange]);
+
+  useEffect(() => {
+    if (mapReady) initMap();
+  }, [mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Update circle radius when it changes
+  useEffect(() => {
+    if (circleRef.current) {
+      circleRef.current.setRadius(parseInt(radius) || 200);
+    }
+  }, [radius]);
+
+  if (!apiKey) return null;
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <input
+        ref={searchRef}
+        type="text"
+        placeholder="🔍 搜索地址 / Buscar dirección..."
+        style={{
+          width: '100%', padding: '10px 14px', borderRadius: '8px 8px 0 0', border: '1.5px solid #ddd',
+          borderBottom: 'none', fontSize: 14, boxSizing: 'border-box', outline: 'none'
+        }}
+      />
+      <div
+        ref={mapRef}
+        style={{
+          width: '100%', height: 350, borderRadius: '0 0 10px 10px', border: '1.5px solid #ddd',
+          borderTop: 'none', background: '#e8e8e8'
+        }}
+      />
+      <div style={{ fontSize: 11, color: '#999', marginTop: 6 }}>
+        点击地图或拖动标记来选择位置 / Haga clic en el mapa o arrastre el marcador
+      </div>
+    </div>
+  );
+}
 
 function InternalManagement() {
   const [allEmployees, setAllEmployees] = useState([]);
@@ -39,12 +370,27 @@ function InternalManagement() {
   const [permEmp, setPermEmp] = useState(null);
   const [permUser, setPermUser] = useState(null);
   const [mobileOnly, setMobileOnly] = useState(false);
+  const [geoEnabled, setGeoEnabled] = useState(false);
+  const [geoLat, setGeoLat] = useState('');
+  const [geoLng, setGeoLng] = useState('');
+  const [geoRadius, setGeoRadius] = useState('200');
+  const [geoName, setGeoName] = useState('');
+  const [geoSaving, setGeoSaving] = useState(false);
+  const [geoMapKey, setGeoMapKey] = useState('');
   const { t, tStatus, tArea } = useLang();
   const { confirmMessage, confirm, handleConfirm, handleCancel } = useConfirm();
 
   const load = () => getEmployees().then(({ data }) => setAllEmployees(data)).catch(console.error);
   const loadUsers = () => getUsers().then(({ data }) => setUsers(data)).catch(console.error);
-  const loadSettings = () => getSettings().then(({ data }) => setMobileOnly(data.mobile_only === 'true')).catch(console.error);
+  const loadSettings = () => getSettings().then(({ data }) => {
+    setMobileOnly(data.mobile_only === 'true');
+    setGeoEnabled(data.clock_geo_enabled === 'true');
+    if (data.clock_lat) setGeoLat(data.clock_lat);
+    if (data.clock_lng) setGeoLng(data.clock_lng);
+    if (data.clock_radius) setGeoRadius(data.clock_radius);
+    if (data.clock_geo_name) setGeoName(data.clock_geo_name);
+    if (data.google_maps_key) setGeoMapKey(data.google_maps_key);
+  }).catch(console.error);
   useEffect(() => { load(); loadUsers(); loadSettings(); }, []);
 
   const toggleMobileOnly = async () => {
@@ -57,6 +403,69 @@ function InternalManagement() {
       alert('设置失败: ' + err.message);
     }
   };
+
+  const toggleGeoEnabled = async () => {
+    const newVal = !geoEnabled;
+    setGeoEnabled(newVal);
+    try {
+      await updateSetting('clock_geo_enabled', String(newVal));
+    } catch (err) {
+      setGeoEnabled(!newVal);
+      alert('设置失败: ' + err.message);
+    }
+  };
+
+  const saveGeoSettings = async () => {
+    if (!geoLat || !geoLng || !geoRadius) {
+      alert('请填写完整的位置信息 / Por favor complete la información de ubicación');
+      return;
+    }
+    setGeoSaving(true);
+    try {
+      await Promise.all([
+        updateSetting('clock_lat', geoLat),
+        updateSetting('clock_lng', geoLng),
+        updateSetting('clock_radius', geoRadius),
+        updateSetting('clock_geo_name', geoName),
+      ]);
+      alert('位置设置已保存 / Ubicación guardada');
+    } catch (err) {
+      alert('保存失败: ' + err.message);
+    }
+    setGeoSaving(false);
+  };
+
+  const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert('浏览器不支持定位 / Geolocalización no soportada');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGeoLat(String(pos.coords.latitude));
+        setGeoLng(String(pos.coords.longitude));
+      },
+      (err) => alert('获取位置失败 / Error al obtener ubicación: ' + err.message),
+      { enableHighAccuracy: true }
+    );
+  };
+
+  const saveMapKey = async (key) => {
+    try {
+      await updateSetting('google_maps_key', key);
+    } catch (err) {
+      alert('保存失败: ' + err.message);
+    }
+  };
+
+  const handleMapLocationChange = useCallback((lat, lng) => {
+    setGeoLat(lat);
+    setGeoLng(lng);
+  }, []);
+
+  const handleMapNameChange = useCallback((name) => {
+    setGeoName(name);
+  }, []);
 
   const loadFiles = (empId) => {
     getEmployeeFiles(empId).then(({ data }) => setEmpFiles(data)).catch(console.error);
@@ -403,6 +812,178 @@ function InternalManagement() {
             />
           </div>
 
+          {/* Geo-fence clock settings */}
+          <div style={{
+            background: '#fff', borderRadius: 14, padding: '24px', marginBottom: 20,
+            border: '1px solid #e8e8e8', boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+          }}>
+            {/* Header with toggle */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#1a3a5c' }}>📍 打卡范围限制 / Restricción de ubicación</div>
+                <div style={{ fontSize: 13, color: '#888', marginTop: 4 }}>
+                  设置员工打卡的允许范围 / Configurar el rango permitido para marcar asistencia
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 13, color: geoEnabled ? '#52c41a' : '#999', fontWeight: 600 }}>
+                  {geoEnabled ? '已启用' : '未启用'}
+                </span>
+                <button
+                  className={`setting-toggle ${geoEnabled ? 'on' : ''}`}
+                  onClick={toggleGeoEnabled}
+                />
+              </div>
+            </div>
+
+            {/* Google Maps API Key */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: '#666', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                Google Maps API Key
+              </label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="text"
+                  value={geoMapKey}
+                  onChange={e => setGeoMapKey(e.target.value)}
+                  placeholder="AIzaSy..."
+                  style={{
+                    flex: 1, padding: '10px 14px', borderRadius: 8, border: '1.5px solid #ddd',
+                    fontSize: 13, fontFamily: 'monospace', boxSizing: 'border-box'
+                  }}
+                />
+                <button
+                  className="btn btn-small btn-primary"
+                  onClick={() => saveMapKey(geoMapKey)}
+                  disabled={!geoMapKey}
+                >
+                  保存Key
+                </button>
+              </div>
+            </div>
+
+            {/* Google Map */}
+            <GeoMap
+              apiKey={geoMapKey}
+              lat={geoLat}
+              lng={geoLng}
+              radius={geoRadius}
+              onLocationChange={handleMapLocationChange}
+              onNameChange={handleMapNameChange}
+            />
+
+            {/* Location name */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: '#666', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                地点名称 / Nombre del lugar
+              </label>
+              <input
+                type="text"
+                value={geoName}
+                onChange={e => setGeoName(e.target.value)}
+                placeholder="例: Centro Comercial Huatai Puente Alto"
+                style={{
+                  width: '100%', padding: '10px 14px', borderRadius: 8, border: '1.5px solid #ddd',
+                  fontSize: 14, boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            {/* Coordinates + radius row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, color: '#666', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                  纬度 / Latitud
+                </label>
+                <input
+                  type="text"
+                  value={geoLat}
+                  onChange={e => setGeoLat(e.target.value)}
+                  placeholder="-33.6001"
+                  style={{
+                    width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #ddd',
+                    fontSize: 14, fontFamily: 'monospace', boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: '#666', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                  经度 / Longitud
+                </label>
+                <input
+                  type="text"
+                  value={geoLng}
+                  onChange={e => setGeoLng(e.target.value)}
+                  placeholder="-70.5784"
+                  style={{
+                    width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #ddd',
+                    fontSize: 14, fontFamily: 'monospace', boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: '#666', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                  范围 / Radio (metros)
+                </label>
+                <input
+                  type="number"
+                  value={geoRadius}
+                  onChange={e => setGeoRadius(e.target.value)}
+                  min="50"
+                  max="5000"
+                  step="50"
+                  style={{
+                    width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid #ddd',
+                    fontSize: 14, fontFamily: 'monospace', boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Info bar */}
+            {geoLat && geoLng && (
+              <div style={{
+                background: '#f0f7ff', borderRadius: 10, padding: '12px 16px', marginBottom: 14,
+                fontSize: 13, color: '#1a3a5c', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8
+              }}>
+                <div>
+                  <span style={{ fontWeight: 600 }}>{geoName || '打卡位置'}</span>
+                  <span style={{ color: '#888', marginLeft: 8 }}>
+                    {Number(geoLat).toFixed(6)}, {Number(geoLng).toFixed(6)} · {geoRadius}m
+                  </span>
+                </div>
+                {!geoMapKey && (
+                  <a
+                    href={`https://www.google.com/maps?q=${geoLat},${geoLng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: 12, color: '#1890ff', textDecoration: 'none', fontWeight: 600 }}
+                  >
+                    🗺️ 在地图中查看 / Ver en mapa
+                  </a>
+                )}
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-small"
+                onClick={getCurrentLocation}
+                style={{ background: '#e8f0fe', color: '#1a73e8', border: '1px solid #c5d9f7' }}
+              >
+                📍 获取当前位置 / Obtener mi ubicación
+              </button>
+              <button
+                className="btn btn-success btn-small"
+                onClick={saveGeoSettings}
+                disabled={geoSaving || !geoLat || !geoLng}
+              >
+                {geoSaving ? '保存中...' : '💾 保存 / Guardar'}
+              </button>
+            </div>
+          </div>
+
           {/* User account management */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, marginTop: 32 }}>
             <div className="section-title" style={{ marginBottom: 0 }}>{t('userManagement')} ({users.length})</div>
@@ -426,7 +1007,7 @@ function InternalManagement() {
                     <td>{u.name}</td>
                     <td>
                       <span className={`badge ${u.role === 'admin' ? 'badge-active' : 'badge-trial'}`}>
-                        {u.role === 'admin' ? t('userRoleAdmin') : t('userRoleStaff')}
+                        {USER_ROLE_LABELS[u.role] || u.role}
                       </span>
                     </td>
                     <td>
@@ -619,39 +1200,18 @@ function InternalManagement() {
       )}
 
       {permUser && (
-        <div className="modal-overlay" onClick={() => setPermUser(null)}>
-          <div className="modal" style={{ width: 360 }} onClick={e => e.stopPropagation()}>
-            <h2>权限设置 - {permUser.name}</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '16px 0' }}>
-              {USER_ROLES.map(r => (
-                <button
-                  key={r}
-                  className="btn btn-small"
-                  style={{
-                    background: permUser.role === r ? '#6c5ce7' : '#f5f5f5',
-                    color: permUser.role === r ? '#fff' : '#333',
-                    border: '2px solid #6c5ce7',
-                    padding: '12px 16px',
-                    fontSize: 14,
-                    fontWeight: 600,
-                  }}
-                  onClick={async () => {
-                    try {
-                      await updateUser(permUser.id, { ...permUser, role: r });
-                      loadUsers();
-                      setPermUser(null);
-                    } catch (err) { alert('权限更新失败: ' + err.message); }
-                  }}
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
-            <div className="form-actions">
-              <button className="btn" onClick={() => setPermUser(null)}>{t('cancel')}</button>
-            </div>
-          </div>
-        </div>
+        <UserPermModal
+          user={permUser}
+          t={t}
+          onClose={() => setPermUser(null)}
+          onSave={async (updatedUser) => {
+            try {
+              await updateUser(updatedUser.id, updatedUser);
+              loadUsers();
+              setPermUser(null);
+            } catch (err) { alert('权限更新失败: ' + err.message); }
+          }}
+        />
       )}
 
       <ConfirmDialog message={confirmMessage} onConfirm={handleConfirm} onCancel={handleCancel} />
@@ -687,19 +1247,12 @@ function InternalManagement() {
                   ))}
                 </div>
                 {uploadType === 'payslip' && (
-                  <div className="payslip-date-picker">
-                    <select value={payslipYear} onChange={e => setPayslipYear(Number(e.target.value))}>
-                      {[...Array(5)].map((_, i) => {
-                        const y = new Date().getFullYear() - 2 + i;
-                        return <option key={y} value={y}>{y}</option>;
-                      })}
-                    </select>
-                    <select value={payslipMonth} onChange={e => setPayslipMonth(Number(e.target.value))}>
-                      {[...Array(12)].map((_, i) => (
-                        <option key={i + 1} value={i + 1}>{i + 1}</option>
-                      ))}
-                    </select>
-                  </div>
+                  <PayslipMonthPicker
+                    year={payslipYear}
+                    month={payslipMonth}
+                    onChangeYear={setPayslipYear}
+                    onChangeMonth={setPayslipMonth}
+                  />
                 )}
                 <label className="btn btn-primary btn-small file-upload-btn">
                   {uploading ? t('fileUploading') : t('fileUpload')}

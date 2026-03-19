@@ -50,10 +50,29 @@ db.query(`
   INSERT INTO settings (key, value) VALUES ('mobile_only', 'false') ON CONFLICT (key) DO NOTHING;
 `).then(() => console.log('Settings table ready')).catch(e => console.error('Migration error:', e.message));
 
+// Auto-migrate: add lunch break columns to clock_records
+db.query(`
+  ALTER TABLE clock_records ADD COLUMN IF NOT EXISTS lunch_out TIMESTAMP;
+  ALTER TABLE clock_records ADD COLUMN IF NOT EXISTS lunch_in TIMESTAMP;
+`).then(() => console.log('Clock lunch columns ready'))
+  .catch(e => console.error('Clock lunch migration error:', e.message));
+
+// Auto-migrate: add Spanish columns to announcements
+db.query(`
+  ALTER TABLE announcements ADD COLUMN IF NOT EXISTS title_es VARCHAR(200) DEFAULT '';
+  ALTER TABLE announcements ADD COLUMN IF NOT EXISTS content_es TEXT DEFAULT '';
+`).then(() => console.log('Announcements i18n columns ready'))
+  .catch(e => console.error('Announcements migration error:', e.message));
+
 // Auto-migrate: add avatar column to users
 db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar VARCHAR(500)`)
   .then(() => console.log('Users avatar column ready'))
   .catch(e => console.error('Avatar migration error:', e.message));
+
+// Auto-migrate: add permissions column to users
+db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT DEFAULT ''`)
+  .then(() => console.log('Users permissions column ready'))
+  .catch(e => console.error('Permissions migration error:', e.message));
 
 // Serve avatar uploads statically
 const path = require('path');

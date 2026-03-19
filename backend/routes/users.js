@@ -37,7 +37,7 @@ router.post('/login', async (req, res) => {
   try {
     // 1. Check system users table first
     const { rows: userRows } = await db.query(
-      'SELECT id, username, name, role, avatar FROM users WHERE username = $1 AND password = $2 AND active = true',
+      'SELECT id, username, name, role, avatar, permissions FROM users WHERE username = $1 AND password = $2 AND active = true',
       [username, password]
     );
     if (userRows.length > 0) {
@@ -54,6 +54,15 @@ router.post('/login', async (req, res) => {
       const emp = empRows[0];
       // Map employee role to system role
       const sysRole = emp.role === '管理员' ? 'admin' : 'staff';
+      // Default permissions based on employee role
+      let permissions = '';
+      if (emp.role === '主管') {
+        permissions = 'home,employees,schedule,announcements,attendance';
+      } else if (emp.role === '管理员') {
+        permissions = ''; // admin gets all by default
+      } else {
+        permissions = 'home,schedule,announcements,attendance';
+      }
       return res.json({
         id: emp.id,
         username: emp.name,
@@ -61,6 +70,7 @@ router.post('/login', async (req, res) => {
         role: sysRole,
         empRole: emp.role,
         isEmployee: true,
+        permissions: permissions,
       });
     }
 
@@ -74,7 +84,7 @@ router.post('/login', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const { rows } = await db.query(
-      'SELECT id, username, name, role, active, created_at FROM users ORDER BY id'
+      'SELECT id, username, name, role, active, permissions, created_at FROM users ORDER BY id'
     );
     res.json(rows);
   } catch (err) {
@@ -102,12 +112,12 @@ router.post('/', async (req, res) => {
 
 // 更新用户
 router.put('/:id', async (req, res) => {
-  const { username, name, role, active } = req.body;
+  const { username, name, role, active, permissions } = req.body;
   try {
     const { rows } = await db.query(
-      `UPDATE users SET username=$1, name=$2, role=$3, active=$4, updated_at=NOW()
-       WHERE id=$5 RETURNING id, username, name, role, active, created_at`,
-      [username, name, role, active !== false, req.params.id]
+      `UPDATE users SET username=$1, name=$2, role=$3, active=$4, permissions=$5, updated_at=NOW()
+       WHERE id=$6 RETURNING id, username, name, role, active, permissions, created_at`,
+      [username, name, role, active !== false, permissions || '', req.params.id]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
     res.json(rows[0]);
@@ -171,17 +181,34 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// 更新个人资料 (name, password)
+// 更新个人资料 (name, password) — supports both users and employees table
 router.put('/:id/profile', async (req, res) => {
-  const { name, password } = req.body;
+  const { name, password, isEmployee } = req.body;
+  const id = req.params.id;
   try {
+    if (isEmployee) {
+      // Update employees table
+      let query, params;
+      if (password) {
+        query = 'UPDATE employees SET name=$1, password=$2, updated_at=NOW() WHERE id=$3 RETURNING id, name';
+        params = [name, password, id];
+      } else {
+        query = 'UPDATE employees SET name=$1, updated_at=NOW() WHERE id=$2 RETURNING id, name';
+        params = [name, id];
+      }
+      const { rows } = await db.query(query, params);
+      if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
+      return res.json({ id: rows[0].id, name: rows[0].name, isEmployee: true });
+    }
+
+    // Update users table
     let query, params;
     if (password) {
       query = 'UPDATE users SET name=$1, password=$2, updated_at=NOW() WHERE id=$3 RETURNING id, username, name, role, avatar';
-      params = [name, password, req.params.id];
+      params = [name, password, id];
     } else {
       query = 'UPDATE users SET name=$1, updated_at=NOW() WHERE id=$2 RETURNING id, username, name, role, avatar';
-      params = [name, req.params.id];
+      params = [name, id];
     }
     const { rows } = await db.query(query, params);
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });

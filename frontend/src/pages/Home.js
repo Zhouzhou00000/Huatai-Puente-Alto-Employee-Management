@@ -1,7 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getEmployees, getAnnouncements, getAttendance, setAttendance } from '../api';
+import { getEmployees, getAnnouncements, getAttendance, setAttendance, getSchedules, getClockRecords } from '../api';
 import { useLang } from '../i18n';
+
+function getWorkHours(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const dow = d.getDay();
+  if (dow === 0) return { start: '11:00', end: '18:00' };
+  if (dow === 6) return { start: '10:00', end: '20:00' };
+  return { start: '10:00', end: '18:00' };
+}
+
+function timeToMin(t) {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
 
 export default function Home() {
   const [employees, setEmployees] = useState([]);
@@ -10,6 +23,8 @@ export default function Home() {
   const [soonExpiring, setSoonExpiring] = useState([]);
   const [attendance, setAttendanceMap] = useState({}); // { employee_id: status }
   const [attendanceNote, setAttendanceNote] = useState({}); // { employee_id: note }
+  const [scheduleMap, setScheduleMap] = useState({}); // { employee_id: shift_value }
+  const [clockMap, setClockMap] = useState({}); // { employee_id: { clock_in, clock_out } }
   const navigate = useNavigate();
   const { t, tStatus, tArea } = useLang();
 
@@ -42,6 +57,24 @@ export default function Home() {
       data.forEach(r => { map[r.employee_id] = r.status; noteMap[r.employee_id] = r.note || ''; });
       setAttendanceMap(map);
       setAttendanceNote(noteMap);
+    }).catch(console.error);
+
+    // Load schedule for today
+    const [y, m] = today.split('-').map(Number);
+    getSchedules(y, m).then(({ data }) => {
+      const map = {};
+      data.forEach(s => {
+        const d = s.work_date?.split('T')[0];
+        if (d === today) map[s.employee_id] = s.shift_value;
+      });
+      setScheduleMap(map);
+    }).catch(console.error);
+
+    // Load clock records for today
+    getClockRecords(today).then(({ data }) => {
+      const map = {};
+      data.forEach(r => { map[r.employee_id] = r; });
+      setClockMap(map);
     }).catch(console.error);
   }, [today]);
 
@@ -195,11 +228,52 @@ export default function Home() {
         <div className="attendance-grid">
           {activeEmployees.map(emp => {
             const status = attendance[emp.id];
-            const style = attendanceStyle[status] || { bg: '#f8f9fa', color: '#aaa', border: '#e8e8e8' };
+            const shift = scheduleMap[emp.id];
+            const clock = clockMap[emp.id];
+            const isRest = shift === 'R';
+            const hasClockIn = !!clock?.clock_in;
+            const hasClockOut = !!clock?.clock_out;
+            const fmtT = (ts) => ts ? new Date(ts).toTimeString().slice(0, 5) : null;
+
+            // Card color based on clock status
+            let cardColor;
+            if (isRest) {
+              cardColor = { bg: '#f5f5f5', border: '#e0e0e0', badgeBg: '#e17055', badgeText: '休息日' };
+            } else if (hasClockIn) {
+              const todayHours = getWorkHours(today);
+              const clockInTime = new Date(clock.clock_in);
+              const clockMin = clockInTime.getHours() * 60 + clockInTime.getMinutes();
+              const startMin = timeToMin(todayHours.start) + 15;
+              if (clockMin > startMin) {
+                cardColor = { bg: '#ffebee', border: '#ef9a9a', badgeBg: '#f44336', badgeText: '迟到' };
+              } else {
+                cardColor = { bg: '#e8f5e9', border: '#81c784', badgeBg: '#52c41a', badgeText: '已到' };
+              }
+            } else {
+              cardColor = { bg: '#e3f2fd', border: '#90caf9', badgeBg: '#3498db', badgeText: '上班' };
+            }
+
             return (
-              <div key={emp.id} className="attendance-card" style={{ borderColor: style.border, background: style.bg }}>
-                <div className="attendance-name">{emp.name}</div>
+              <div key={emp.id} className="attendance-card" style={{ borderColor: cardColor.border, background: cardColor.bg }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="attendance-name">{emp.name}</div>
+                  <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: cardColor.badgeBg, color: '#fff', fontWeight: 600 }}>{cardColor.badgeText}</span>
+                </div>
                 <div className="attendance-sub">{emp.position}{emp.shift_group ? ` · 组${emp.shift_group}` : ''}</div>
+
+                {/* Clock info */}
+                {(hasClockIn || hasClockOut) && (
+                  <div style={{ display: 'flex', gap: 12, fontSize: 11, margin: '4px 0 2px', color: '#555' }}>
+                    {hasClockIn && <span style={{ color: '#52c41a', fontWeight: 600 }}>上班 {fmtT(clock.clock_in)}</span>}
+                    {hasClockOut && <span style={{ color: '#faad14', fontWeight: 600 }}>下班 {fmtT(clock.clock_out)}</span>}
+                    {hasClockIn && hasClockOut && (
+                      <span style={{ color: '#6c5ce7', fontWeight: 600 }}>
+                        {((new Date(clock.clock_out) - new Date(clock.clock_in)) / 3600000).toFixed(1)}h
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 <div className="attendance-btns">
                   {ATTENDANCE_STATUSES.map(s => {
                     const st = attendanceStyle[s];
@@ -218,60 +292,6 @@ export default function Home() {
               </div>
             );
           })}
-        </div>
-      </div>
-
-      {/* Employee Data Table */}
-      <div style={{
-        background: 'white', borderRadius: 14, padding: '24px',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1a3a5c', margin: 0 }}>
-            {t('navEmployees')} ({activeEmployees.length})
-          </h3>
-          <button className="btn btn-small btn-primary" onClick={() => navigate('/employees')}>{t('homeViewAll')}</button>
-        </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: '#f8f9fa', textAlign: 'left' }}>
-                <th style={thStyle}>{t('colName')}</th>
-                <th style={thStyle}>{t('colRut')}</th>
-                <th style={thStyle}>{t('colPosition')}</th>
-                <th style={thStyle}>{t('colStatus')}</th>
-                <th style={thStyle}>{t('colGroup')}</th>
-                <th style={thStyle}>{t('colArea')}</th>
-                <th style={thStyle}>{t('colExpiry')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {activeEmployees.length === 0 ? (
-                <tr><td colSpan={7} style={{ textAlign: 'center', padding: 30, color: '#bbb' }}>{t('noData')}</td></tr>
-              ) : (
-                activeEmployees.map(emp => (
-                  <tr key={emp.id} onClick={() => navigate(`/employees/${emp.id}/edit`)}
-                    style={{ cursor: 'pointer', borderBottom: '1px solid #f0f0f0' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#f5f7ff'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <td style={tdStyle}><strong>{emp.name}</strong></td>
-                    <td style={tdStyle}>{emp.rut || '—'}</td>
-                    <td style={tdStyle}>{emp.position || '—'}</td>
-                    <td style={tdStyle}>
-                      <span style={{
-                        padding: '2px 10px', borderRadius: 10, fontSize: 12, fontWeight: 600,
-                        background: statusBg(emp.contract_status), color: statusColor(emp.contract_status),
-                      }}>{tStatus(emp.contract_status)}</span>
-                    </td>
-                    <td style={tdStyle}>{emp.shift_group || '—'}</td>
-                    <td style={tdStyle}>{emp.work_area ? tArea(emp.work_area) : '—'}</td>
-                    <td style={tdStyle}>{emp.contract_end_date ? emp.contract_end_date.split('T')[0] : '—'}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
         </div>
       </div>
 
@@ -347,21 +367,3 @@ function ReportCard({ title, data, unit }) {
   );
 }
 
-const thStyle = { padding: '10px 12px', fontWeight: 600, color: '#555', fontSize: 12, borderBottom: '2px solid #e8e8e8', whiteSpace: 'nowrap' };
-const tdStyle = { padding: '10px 12px', whiteSpace: 'nowrap' };
-
-function statusBg(s) {
-  if (s === '有合同-在职') return '#e8f5e9';
-  if (s === '试用期') return '#fff3e0';
-  if (s === '日结/临时') return '#e3f2fd';
-  if (s === '已离职') return '#fce4ec';
-  return '#f5f5f5';
-}
-
-function statusColor(s) {
-  if (s === '有合同-在职') return '#2e7d32';
-  if (s === '试用期') return '#e65100';
-  if (s === '日结/临时') return '#1565c0';
-  if (s === '已离职') return '#c62828';
-  return '#666';
-}
